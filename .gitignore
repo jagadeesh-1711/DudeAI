@@ -1,0 +1,24 @@
+# Python virtual environments (never commit these folders)
+.venv/
+**/.venv/
+venv/
+**/venv/
+
+# Node dependencies and generated builds
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+
+# Python generated files
+__pycache__/
+**/__pycache__/
+*.py[cod]
+
+# Local secrets/configuration: commit the example templates only
+.env
+**/.env
+
+# Local app data and private QA logs (keep these on the developer's computer)
+backend/dude_ai.db
+backend/api_audit_tracker.xlsx
