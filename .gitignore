@@ -1,0 +1,45 @@
+# Python virtual environments (never commit these folders)
+.venv/
+**/.venv/
+venv/
+**/venv/
+ENV/
+env/
+
+# Node dependencies and generated builds
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+
+# Python generated files
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Environment secrets: keep local, commit example templates only
+.env
+.env.local
+.env.*.local
+**/.env
+**/.env.local
+**/.env.*.local
+
+# Local SQLite databases and Excel audit trackers (never commit private Jira data)
+*.db
+*.db-journal
+*.sqlite3
+backend/dude_ai.db*
+backend/api_audit_tracker.xlsx
+
+# Playwright test artifacts and coverage
+playwright-report/
+**/playwright-report/
+test-results/
+**/test-results/
+
+# OS metadata
+.DS_Store
+Thumbs.db

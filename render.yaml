@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: dudeai
+    env: python
+    plan: free
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.10
+      - key: ALLOWED_ORIGINS
+        value: https://dude-ai-roan.vercel.app,https://dudeai.onrender.com
