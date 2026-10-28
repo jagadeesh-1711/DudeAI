@@ -142,6 +142,102 @@ class TestDudeAIBackend(unittest.TestCase):
             self.assertEqual(identity["status"], "verified_jira_account_id")
             self.assertIn("verified as your Jira Cloud account ID", identity["message"])
 
+    def test_validate_import_json_valid_file(self):
+        with open("security_vulnerabilities.json", "r", encoding="utf-8") as f:
+            content = f.read()
+        response = self.client.post("/api/jira/validate-import-json", json={"raw_json": content})
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["valid"])
+        self.assertEqual(data["count"], 6)
+        self.assertIn("DAST", data["detected_project_keys"])
+        first_issue = data["issues"][0]
+        self.assertEqual(first_issue["summary"], "Password Exposure Vulnerability")
+        self.assertEqual(first_issue["issuetype"], "Bug")
+        self.assertEqual(first_issue["priority"], "Highest")
+
+    def test_validate_import_json_invalid_syntax(self):
+        response = self.client.post("/api/jira/validate-import-json", json={"raw_json": "{not-valid-json"})
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertFalse(data["valid"])
+        self.assertEqual(data["count"], 0)
+        self.assertIn("Invalid JSON syntax", data["error"])
+
+    def test_import_vulnerabilities_with_jira_mock(self):
+        mock_post_resp = MagicMock()
+        mock_post_resp.is_error = False
+        mock_post_resp.status_code = 201
+        mock_post_resp.json.return_value = {
+            "id": "10045",
+            "key": "DEMO-101",
+            "self": "https://example.atlassian.net/rest/api/3/issue/10045"
+        }
+
+        with patch("backend.main.timed_jira_post", return_value=mock_post_resp):
+            payload = {
+                "base_url": "https://example.atlassian.net",
+                "email": "alex@atlassian.com",
+                "api_token": "dummy-token",
+                "user_name": "Alex Hunter",
+                "user_id": "USR-1042",
+                "target_project_key": "DEMO",
+                "skip_duplicates": True,
+                "issues": [
+                    {
+                        "fields": {
+                            "summary": "Unique New Security Finding",
+                            "issuetype": {"name": "Bug"},
+                            "priority": {"name": "Highest"},
+                            "description": "Sample test description",
+                            "labels": ["security"]
+                        }
+                    }
+                ]
+            }
+            response = self.client.post("/api/jira/import-vulnerabilities", json=payload)
+            self.assertEqual(response.status_code, 200)
+            data = response.json()
+            self.assertTrue(data["success"])
+            self.assertEqual(data["created"], 1)
+            self.assertEqual(data["skipped"], 0)
+            self.assertEqual(data["results"][0]["issue_key"], "DEMO-101")
+            self.assertEqual(data["results"][0]["status"], "created")
+
+    def test_import_vulnerabilities_duplicate_skipping(self):
+        with app_module.db() as con:
+            con.execute(
+                "INSERT OR REPLACE INTO documents(issue_key, project_key, summary, description, status, assignee, updated_at, browse_url) "
+                "VALUES ('DEMO-101', 'DEMO', 'Known Existing Vulnerability', 'desc', 'To Do', 'Alex', '2026-10-28', 'https://example.atlassian.net/browse/DEMO-101')"
+            )
+
+        payload = {
+            "base_url": "https://example.atlassian.net",
+            "email": "alex@atlassian.com",
+            "api_token": "dummy-token",
+            "user_name": "Alex Hunter",
+            "user_id": "USR-1042",
+            "target_project_key": "DEMO",
+            "skip_duplicates": True,
+            "issues": [
+                {
+                    "fields": {
+                        "summary": "Known Existing Vulnerability",
+                        "issuetype": {"name": "Bug"}
+                    }
+                }
+            ]
+        }
+        response = self.client.post("/api/jira/import-vulnerabilities", json=payload)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["success"])
+        self.assertEqual(data["created"], 0)
+        self.assertEqual(data["skipped"], 1)
+        self.assertEqual(data["results"][0]["status"], "skipped")
+        self.assertIn("already exists", data["results"][0]["message"])
+
 
 if __name__ == "__main__":
     unittest.main()
+

@@ -72,13 +72,33 @@ Open http://127.0.0.1:5173.
 5. **Audit Attribution**:
    - Every API request, button click, and imported Jira issue records the user name and user ID in `api_audit_tracker.xlsx` (`API Call Log`, `Button Click Log`, and `Imported Jira Issues`).
 
+## Security Vulnerability JSON Importer
+
+Dude AI includes an automated vulnerability issue import workflow:
+1. **Sample Vulnerabilities File**: `security_vulnerabilities.json` located at the project root contains 6 Jira-style security findings (e.g. Password Exposure, User ID Disclosure, Revenue Data Exposure, Potential Malware, Missing API Authorization, Sensitive Data Leakage).
+2. **File Selection & Client Preview**:
+   - Users can select a local JSON file or click **Load Sample Vulnerabilities** to preview all 6 issues.
+   - The preview table details issue type (`Bug`), priority (`Highest`/`High`), summary, labels, and description snippets.
+3. **Target Project Mapping**:
+   - The user selects or inputs their active Jira project key (e.g. `DEMO`).
+   - The importer maps template project keys (e.g. `DAST`) directly to the target project instead of assuming `DAST` exists.
+4. **Jira API V3 Integration & Resilient Creation**:
+   - Issues are created individually on Jira Cloud via `POST /rest/api/3/issue`.
+   - Issue descriptions are formatted in Atlassian Document Format (ADF).
+   - If a target project restricts issue types (e.g. non-software projects without `Bug`), the importer automatically falls back to `Task`.
+5. **Duplicate Prevention & Observability**:
+   - Issues with existing summaries in the target project are skipped and clearly reported.
+   - All imports are stored in SQLite and appended to `Imported Jira Issues` in `api_audit_tracker.xlsx`.
+   - Results show direct clickable links to browse the created issues on Jira Cloud.
+
 ## How it works
 
 1. Share your name and user ID in the welcome dialog.
 2. Enter Jira base URL, Atlassian account email, and API token.
 3. Click **Test connection** to verify the account and identity status.
 4. Click **Load projects**, select a project, and click **Fetch documents**.
-5. Open **Documents** to search imported issues, open issues in Jira, or download the Excel audit tracker.
+5. Use **Import Vulnerabilities** to preview and import Jira-style JSON vulnerability records into your Jira project.
+6. Open **Documents** to search imported issues, open issues in Jira, or download the Excel audit tracker.
 
 Jira issue search uses the current enhanced endpoint `/rest/api/3/search/jql`. The API token is sent to the backend for each request and is not written to the SQLite database. Imported issue data is stored in `backend/dude_ai.db`.
 

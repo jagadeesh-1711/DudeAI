@@ -1,5 +1,6 @@
 """Dude AI - simple Jira connection and issue importer for learning."""
 import os
+import json
 from contextlib import asynccontextmanager
 from pathlib import Path
 import sqlite3
@@ -103,6 +104,7 @@ def ensure_excel_tracker():
         ["E2E-001", "End-to-end", "Connect, load projects, import and view issues", "E2E / Smoke", "High", "Dedicated Jira test project", "Run the user journey", "Projects and imported issues display correctly; timings recorded", "", "Not Run", "", "Playwright isolated tests and user-visible assertions"],
         ["ERR-001", "Resilience", "Jira timeout or server error is handled", "Negative / Resilience", "Medium", "Mock or controlled failing endpoint", "Simulate timeout / 5xx", "Action finishes safely, error shown, lock released", "", "Not Run", "", "Error-path and recovery testing"],
         ["USR-001", "Identity", "Welcome username and user ID collected", "User Flow / Identity", "High", "App loaded", "Enter username and user ID and submit", "Personalized greeting shown; headers passed to backend; internal ID logged", "", "Not Run", "", "User identity onboarding and audit attribution"],
+        ["VULN-001", "Security / Import", "Import vulnerability JSON into Jira project", "Integration / Import", "High", "Valid JSON and Jira connection", "Upload security_vulnerabilities.json, preview, and confirm import", "Issues created in Jira; duplicates handled; audit tracker updated", "", "Not Run", "", "Vulnerability import workflow and audit integrity"],
     ]
     for row in qa_rows:
         qa.append(row)
@@ -115,6 +117,8 @@ def ensure_excel_tracker():
         ["frontend/src/App.jsx", "request() on Test connection", "POST", "/api/jira/test-connection", "test_connection()", "Verify Jira email and API token, validate entered user ID against Jira accountId."],
         ["frontend/src/App.jsx", "loadProjects()", "POST", "/api/jira/projects", "get_projects()", "List Jira projects the account can access."],
         ["frontend/src/App.jsx", "fetchDocuments()", "POST", "/api/jira/fetch-documents", "fetch_documents()", "Fetch Jira issues and save/update local records with user attribution."],
+        ["frontend/src/App.jsx", "validateImportJson()", "POST", "/api/jira/validate-import-json", "validate_import_json()", "Validate uploaded Jira vulnerability JSON structure and fields."],
+        ["frontend/src/App.jsx", "importVulnerabilities()", "POST", "/api/jira/import-vulnerabilities", "import_vulnerabilities()", "Create Jira issues individually with ADF descriptions and duplicate prevention."],
         ["frontend/src/App.jsx", "loadDocuments()", "GET", "/api/documents?limit=500", "documents()", "Load locally imported issues for the Documents page."],
         ["frontend/src/App.jsx", "topbar refresh button", "GET", "/api/documents?limit=500", "documents()", "Refresh the visible local issue list."],
         ["frontend/src/App.jsx", "Download Excel report button", "GET", "/api/reports/excel", "download_excel_report()", "Download the api_audit_tracker.xlsx workbook."],
@@ -157,6 +161,22 @@ async def timed_jira_get(client: httpx.AsyncClient, endpoint: str, action: str, 
             log_jira_api_call(action, endpoint, status, elapsed)
         except Exception as exc:
             print(f"[Jira API audit log warning] {exc}")
+
+
+async def timed_jira_post(client: httpx.AsyncClient, endpoint: str, action: str, json_data=None):
+    started = time.perf_counter()
+    status = 0
+    try:
+        response = await client.post(endpoint, json=json_data)
+        status = response.status_code
+        return response
+    finally:
+        elapsed = (time.perf_counter() - started) * 1000
+        try:
+            log_jira_api_call(action, endpoint, status, elapsed)
+        except Exception as exc:
+            print(f"[Jira API audit log warning] {exc}")
+
 
 
 def log_button_event(event: dict):
@@ -255,6 +275,9 @@ def init_db():
             pass
 
 
+init_db()
+
+
 @asynccontextmanager
 async def lifespan(app):
     init_db()
@@ -276,7 +299,7 @@ async def record_api_call(request: Request, call_next):
     click_id = request.headers.get("x-click-id", "")
     user_name = request.headers.get("x-user-name", "")
     user_id = request.headers.get("x-user-id", "")
-    guarded = request.method == "POST" and request.url.path in {"/api/jira/test-connection", "/api/jira/projects", "/api/jira/fetch-documents"}
+    guarded = request.method == "POST" and request.url.path in {"/api/jira/test-connection", "/api/jira/projects", "/api/jira/fetch-documents", "/api/jira/import-vulnerabilities"}
     guard_key = request.url.path
     acquired = False
     try:
@@ -397,6 +420,17 @@ class SearchRequest(BaseModel):
     project_key: str | None = None
 
 
+class ValidateJsonRequest(BaseModel):
+    raw_json: str | None = None
+    issues_data: list[dict] | dict | None = None
+
+
+class ImportVulnerabilitiesRequest(Credentials):
+    target_project_key: str = Field(min_length=1, max_length=30)
+    issues: list[dict] = Field(min_length=1)
+    skip_duplicates: bool = True
+
+
 def clean_url(value: str) -> str:
     value = value.rstrip("/")
     parsed = urlparse(value)
@@ -434,6 +468,29 @@ def to_text(value):
             return value.get("text", "")
         return " ".join(filter(None, (to_text(v) for k, v in value.items() if k not in {"type", "version"})))
     return str(value)
+
+
+def text_to_adf(value: str) -> dict:
+    text = (value or "").strip()
+    if not text:
+        text = "No description provided."
+    paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+    if not paragraphs:
+        paragraphs = [text]
+    return {
+        "type": "doc",
+        "version": 1,
+        "content": [
+            {
+                "type": "paragraph",
+                "content": [
+                    {"type": "text", "text": p}
+                ]
+            }
+            for p in paragraphs
+        ]
+    }
+
 
 
 @app.get("/")
@@ -596,6 +653,280 @@ async def fetch_documents(body: FetchRequest, request: Request):
     print(f"Excel tracker updated: {EXCEL_FILE}")
     print("=" * 100 + "\n")
     return {"success": True, "project_key": project_key, "fetched": len(records), "message": f"Imported {len(records)} issue(s)."}
+
+
+@app.post("/api/jira/validate-import-json")
+def validate_import_json(body: ValidateJsonRequest):
+    data = None
+    if body.issues_data is not None:
+        data = body.issues_data
+    elif body.raw_json:
+        try:
+            data = json.loads(body.raw_json)
+        except Exception as exc:
+            return {
+                "valid": False,
+                "count": 0,
+                "issues": [],
+                "detected_project_keys": [],
+                "error": f"Invalid JSON syntax: {exc}",
+                "message": "The provided content is not valid JSON."
+            }
+    else:
+        return {
+            "valid": False,
+            "count": 0,
+            "issues": [],
+            "detected_project_keys": [],
+            "error": "No JSON content or issue data provided.",
+            "message": "Please select a JSON file or provide JSON content."
+        }
+
+    raw_list = []
+    if isinstance(data, list):
+        raw_list = data
+    elif isinstance(data, dict):
+        if "issues" in data and isinstance(data["issues"], list):
+            raw_list = data["issues"]
+        elif "fields" in data:
+            raw_list = [data]
+        else:
+            raw_list = [v for v in data.values() if isinstance(v, dict)]
+
+    if not raw_list:
+        return {
+            "valid": False,
+            "count": 0,
+            "issues": [],
+            "detected_project_keys": [],
+            "error": "No issue records found in JSON. Expected an array of issues or an object with an 'issues' property.",
+            "message": "No issues found in the JSON file."
+        }
+
+    normalized = []
+    detected_keys = set()
+    for idx, item in enumerate(raw_list):
+        if not isinstance(item, dict):
+            continue
+        fields = item.get("fields", item)
+        summary = str(fields.get("summary") or "").strip()
+        if not summary:
+            continue
+
+        orig_proj = ""
+        proj_val = fields.get("project")
+        if isinstance(proj_val, dict):
+            orig_proj = str(proj_val.get("key", "")).strip().upper()
+        elif isinstance(proj_val, str):
+            orig_proj = proj_val.strip().upper()
+        if orig_proj:
+            detected_keys.add(orig_proj)
+
+        issue_type = "Bug"
+        it_val = fields.get("issuetype")
+        if isinstance(it_val, dict):
+            issue_type = it_val.get("name", "Bug")
+        elif isinstance(it_val, str) and it_val.strip():
+            issue_type = it_val.strip()
+
+        priority = "High"
+        p_val = fields.get("priority")
+        if isinstance(p_val, dict):
+            priority = p_val.get("name", "High")
+        elif isinstance(p_val, str) and p_val.strip():
+            priority = p_val.strip()
+
+        labels = fields.get("labels", [])
+        if isinstance(labels, str):
+            labels = [l.strip() for l in labels.split(",") if l.strip()]
+        elif not isinstance(labels, list):
+            labels = []
+
+        desc_raw = fields.get("description", "")
+        desc_text = to_text(desc_raw)
+
+        normalized.append({
+            "index": idx + 1,
+            "summary": summary,
+            "issuetype": issue_type,
+            "priority": priority,
+            "original_project_key": orig_proj or "DAST",
+            "labels": labels,
+            "description": desc_text,
+            "description_preview": desc_text[:140] + ("..." if len(desc_text) > 140 else ""),
+            "raw": item
+        })
+
+    if not normalized:
+        return {
+            "valid": False,
+            "count": 0,
+            "issues": [],
+            "detected_project_keys": [],
+            "error": "No valid issues with a 'summary' field could be parsed from the JSON.",
+            "message": "Zero valid issues found in JSON."
+        }
+
+    return {
+        "valid": True,
+        "count": len(normalized),
+        "issues": normalized,
+        "detected_project_keys": sorted(list(detected_keys)),
+        "message": f"Successfully parsed and validated {len(normalized)} vulnerability issue(s)."
+    }
+
+
+@app.post("/api/jira/import-vulnerabilities")
+async def import_vulnerabilities(body: ImportVulnerabilitiesRequest, request: Request):
+    user_name = (body.user_name or request.headers.get("x-user-name", "")).strip()
+    user_id = (body.user_id or request.headers.get("x-user-id", "")).strip()
+    target_project_key = body.target_project_key.strip().upper()
+
+    results = []
+    created_records = []
+
+    async with jira_client(body) as client:
+        for item in body.issues:
+            fields_in = item.get("fields", item)
+            summary = str(fields_in.get("summary", "")).strip()
+            if not summary:
+                results.append({
+                    "summary": "(Untitled issue)",
+                    "status": "failed",
+                    "error": "Issue summary is missing"
+                })
+                continue
+
+            # Duplicate check: check local SQLite documents table
+            if body.skip_duplicates:
+                with db() as con:
+                    cur = con.execute(
+                        "SELECT issue_key FROM documents WHERE project_key = ? AND LOWER(summary) = LOWER(?) LIMIT 1",
+                        (target_project_key, summary)
+                    )
+                    existing = cur.fetchone()
+                    if existing:
+                        results.append({
+                            "summary": summary,
+                            "status": "skipped",
+                            "issue_key": existing["issue_key"],
+                            "browse_url": f"{clean_url(str(body.base_url))}/browse/{existing['issue_key']}",
+                            "message": f"Issue already exists in local records ({existing['issue_key']})"
+                        })
+                        continue
+
+            # Map description to Jira ADF format
+            desc_raw = fields_in.get("description", "")
+            if isinstance(desc_raw, dict) and desc_raw.get("type") == "doc":
+                adf_desc = desc_raw
+            else:
+                adf_desc = text_to_adf(to_text(desc_raw))
+
+            issue_type_name = "Bug"
+            if isinstance(fields_in.get("issuetype"), dict):
+                issue_type_name = fields_in["issuetype"].get("name", "Bug")
+            elif isinstance(fields_in.get("issuetype"), str) and fields_in["issuetype"].strip():
+                issue_type_name = fields_in["issuetype"].strip()
+
+            priority_name = "High"
+            if isinstance(fields_in.get("priority"), dict):
+                priority_name = fields_in["priority"].get("name", "High")
+            elif isinstance(fields_in.get("priority"), str) and fields_in["priority"].strip():
+                priority_name = fields_in["priority"].strip()
+
+            labels = fields_in.get("labels", [])
+            if isinstance(labels, str):
+                labels = [l.strip() for l in labels.split(",") if l.strip()]
+
+            jira_payload = {
+                "fields": {
+                    "project": {"key": target_project_key},
+                    "summary": summary,
+                    "issuetype": {"name": issue_type_name},
+                    "description": adf_desc,
+                }
+            }
+            if priority_name:
+                jira_payload["fields"]["priority"] = {"name": priority_name}
+            if labels:
+                jira_payload["fields"]["labels"] = labels
+
+            # Post individual issue to Jira Cloud API
+            response = await timed_jira_post(client, "/rest/api/3/issue", "Create vulnerability issue", json_data=jira_payload)
+
+            # Retry fallbacks if project issue types or priority are restricted
+            if response.status_code == 400:
+                err_text = response.text.lower()
+                if "issuetype" in err_text and issue_type_name != "Task":
+                    jira_payload["fields"]["issuetype"] = {"name": "Task"}
+                    response = await timed_jira_post(client, "/rest/api/3/issue", "Create vulnerability issue (fallback Task)", json_data=jira_payload)
+                if response.status_code == 400 and "priority" in response.text.lower():
+                    jira_payload["fields"].pop("priority", None)
+                    response = await timed_jira_post(client, "/rest/api/3/issue", "Create vulnerability issue (fallback no priority)", json_data=jira_payload)
+
+            if response.is_error:
+                err_detail = response.text[:250]
+                try:
+                    ej = response.json()
+                    msgs = ej.get("errorMessages", [])
+                    flds = [f"{k}: {v}" for k, v in ej.get("errors", {}).items()]
+                    err_detail = " | ".join(filter(None, msgs + flds)) or err_detail
+                except Exception:
+                    pass
+                results.append({
+                    "summary": summary,
+                    "status": "failed",
+                    "error": f"Jira {response.status_code}: {err_detail}"
+                })
+            else:
+                resp_json = response.json()
+                created_key = resp_json.get("key", "")
+                browse_url = f"{clean_url(str(body.base_url))}/browse/{created_key}"
+                results.append({
+                    "summary": summary,
+                    "status": "created",
+                    "issue_key": created_key,
+                    "browse_url": browse_url,
+                    "message": f"Successfully created {created_key}"
+                })
+                created_records.append({
+                    "issue_key": created_key,
+                    "project_key": target_project_key,
+                    "summary": summary,
+                    "description": to_text(fields_in.get("description", "")),
+                    "status": "To Do",
+                    "assignee": "Unassigned",
+                    "updated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+                    "browse_url": browse_url,
+                    "imported_by": user_name,
+                    "imported_by_id": user_id,
+                })
+
+    if created_records:
+        with db() as con:
+            con.executemany("""INSERT INTO documents(issue_key, project_key, summary, description, status, assignee, updated_at, browse_url, imported_by, imported_by_id)
+                VALUES(:issue_key,:project_key,:summary,:description,:status,:assignee,:updated_at,:browse_url,:imported_by,:imported_by_id)
+                ON CONFLICT(issue_key) DO UPDATE SET project_key=excluded.project_key, summary=excluded.summary,
+                description=excluded.description, status=excluded.status, assignee=excluded.assignee,
+                updated_at=excluded.updated_at, browse_url=excluded.browse_url,
+                imported_by=excluded.imported_by, imported_by_id=excluded.imported_by_id""", created_records)
+        log_imported_issues(created_records)
+
+    created_cnt = sum(1 for r in results if r["status"] == "created")
+    skipped_cnt = sum(1 for r in results if r["status"] == "skipped")
+    failed_cnt = sum(1 for r in results if r["status"] == "failed")
+
+    return {
+        "success": True,
+        "target_project_key": target_project_key,
+        "total": len(body.issues),
+        "created": created_cnt,
+        "skipped": skipped_cnt,
+        "failed": failed_cnt,
+        "results": results,
+        "message": f"Import completed: {created_cnt} created, {skipped_cnt} skipped, {failed_cnt} failed."
+    }
+
 
 
 @app.get("/api/documents")

@@ -1,0 +1,119 @@
+{
+  "description": "Sample Jira-style security vulnerability issues for import into Dude AI.",
+  "issues": [
+    {
+      "fields": {
+        "project": {
+          "key": "DAST"
+        },
+        "summary": "Password Exposure Vulnerability",
+        "issuetype": {
+          "name": "Bug"
+        },
+        "priority": {
+          "name": "Highest"
+        },
+        "description": "Sample security finding: passwords may be exposed through API responses, application logs, or error messages. Verify in an authorized test environment.",
+        "labels": [
+          "security",
+          "password-exposure"
+        ]
+      }
+    },
+    {
+      "fields": {
+        "project": {
+          "key": "DAST"
+        },
+        "summary": "User ID Information Disclosure",
+        "issuetype": {
+          "name": "Bug"
+        },
+        "priority": {
+          "name": "High"
+        },
+        "description": "Sample security finding: internal user identifiers may be exposed or user records may be accessible without proper authorization.",
+        "labels": [
+          "security",
+          "user-id-disclosure"
+        ]
+      }
+    },
+    {
+      "fields": {
+        "project": {
+          "key": "DAST"
+        },
+        "summary": "Revenue Data Exposure",
+        "issuetype": {
+          "name": "Bug"
+        },
+        "priority": {
+          "name": "High"
+        },
+        "description": "Sample security finding: confidential revenue figures or financial reports may be accessible without appropriate permissions.",
+        "labels": [
+          "security",
+          "financial-data"
+        ]
+      }
+    },
+    {
+      "fields": {
+        "project": {
+          "key": "DAST"
+        },
+        "summary": "Potential Malware in Uploaded File",
+        "issuetype": {
+          "name": "Bug"
+        },
+        "priority": {
+          "name": "Highest"
+        },
+        "description": "Sample security finding: a file upload may contain suspicious content that requires investigation using approved security tools in an isolated environment.",
+        "labels": [
+          "security",
+          "malware-detection"
+        ]
+      }
+    },
+    {
+      "fields": {
+        "project": {
+          "key": "DAST"
+        },
+        "summary": "Missing API Authorization",
+        "issuetype": {
+          "name": "Bug"
+        },
+        "priority": {
+          "name": "High"
+        },
+        "description": "Sample security finding: a protected API endpoint may fail to verify whether a user is authorized to access a requested resource.",
+        "labels": [
+          "security",
+          "api-authorization"
+        ]
+      }
+    },
+    {
+      "fields": {
+        "project": {
+          "key": "DAST"
+        },
+        "summary": "Sensitive Data Leakage in API Response",
+        "issuetype": {
+          "name": "Bug"
+        },
+        "priority": {
+          "name": "High"
+        },
+        "description": "Sample security finding: an API response may expose confidential personal or business information that is not required by the client.",
+        "labels": [
+          "security",
+          "sensitive-data"
+        ]
+      }
+    }
+  ]
+}

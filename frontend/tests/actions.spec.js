@@ -164,3 +164,106 @@ test('download excel report button requests /api/reports/excel and provides feed
   await expect(page.getByText(/downloaded successfully/i)).toBeVisible();
   await expect.poll(() => reportCalls).toBe(1);
 });
+
+test('vulnerability import modal previews security_vulnerabilities.json and imports mapped issues into Jira', async ({ page }) => {
+  let importPayload = null;
+  let importHeaders = null;
+
+  await page.addInitScript(() => {
+    window.localStorage.setItem('dude_ai_user', JSON.stringify({ username: 'Security Auditor', userId: 'SEC-99' }));
+  });
+
+  await page.route('**/api/telemetry/button-event', route => route.fulfill({ status: 200, contentType: 'application/json', body: '{"success":true}' }));
+  await page.route('**/api/documents?limit=500', route => route.fulfill({ status: 200, contentType: 'application/json', body: '{"documents":[]}' }));
+  await page.route('**/api/jira/projects', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(validProjects) }));
+
+  await page.route('**/api/jira/validate-import-json', async route => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        valid: true,
+        count: 6,
+        detected_project_keys: ['DAST'],
+        issues: [
+          { index: 1, summary: 'Password Exposure Vulnerability', issuetype: 'Bug', priority: 'Highest', original_project_key: 'DAST', labels: ['security'], description_preview: 'Sample security finding...' },
+          { index: 2, summary: 'User ID Information Disclosure', issuetype: 'Bug', priority: 'High', original_project_key: 'DAST', labels: ['security'], description_preview: 'Sample security finding...' },
+          { index: 3, summary: 'Revenue Data Exposure', issuetype: 'Bug', priority: 'High', original_project_key: 'DAST', labels: ['security'], description_preview: 'Sample security finding...' },
+          { index: 4, summary: 'Potential Malware in Uploaded File', issuetype: 'Bug', priority: 'Highest', original_project_key: 'DAST', labels: ['security'], description_preview: 'Sample security finding...' },
+          { index: 5, summary: 'Missing API Authorization', issuetype: 'Bug', priority: 'High', original_project_key: 'DAST', labels: ['security'], description_preview: 'Sample security finding...' },
+          { index: 6, summary: 'Sensitive Data Leakage in API Response', issuetype: 'Bug', priority: 'High', original_project_key: 'DAST', labels: ['security'], description_preview: 'Sample security finding...' },
+        ],
+        message: 'Successfully validated 6 vulnerability issue(s).'
+      })
+    });
+  });
+
+  await page.route('**/api/jira/import-vulnerabilities', async route => {
+    importHeaders = route.request().headers();
+    importPayload = JSON.parse(route.request().postData() || '{}');
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        target_project_key: 'DEMO',
+        total: 6,
+        created: 6,
+        skipped: 0,
+        failed: 0,
+        results: [
+          { summary: 'Password Exposure Vulnerability', status: 'created', issue_key: 'DEMO-101', browse_url: 'https://example.atlassian.net/browse/DEMO-101' },
+          { summary: 'User ID Information Disclosure', status: 'created', issue_key: 'DEMO-102', browse_url: 'https://example.atlassian.net/browse/DEMO-102' },
+          { summary: 'Revenue Data Exposure', status: 'created', issue_key: 'DEMO-103', browse_url: 'https://example.atlassian.net/browse/DEMO-103' },
+          { summary: 'Potential Malware in Uploaded File', status: 'created', issue_key: 'DEMO-104', browse_url: 'https://example.atlassian.net/browse/DEMO-104' },
+          { summary: 'Missing API Authorization', status: 'created', issue_key: 'DEMO-105', browse_url: 'https://example.atlassian.net/browse/DEMO-105' },
+          { summary: 'Sensitive Data Leakage in API Response', status: 'created', issue_key: 'DEMO-106', browse_url: 'https://example.atlassian.net/browse/DEMO-106' },
+        ],
+        message: 'Import completed: 6 created, 0 skipped, 0 failed.'
+      })
+    });
+  });
+
+  await page.goto('/');
+
+  // 1. Enter Jira credentials
+  await page.getByLabel(/Jira base URL/i).fill('https://example.atlassian.net');
+  await page.getByLabel(/Account email/i).fill('auditor@example.com');
+  await page.getByLabel(/API token/i).fill('auditor-token');
+
+  // 2. Open Vulnerability Importer modal from topbar
+  const openModalBtn = page.getByRole('button', { name: /Import Vulnerabilities/i }).first();
+  await openModalBtn.click();
+
+  await expect(page.getByText('Import Security Vulnerabilities to Jira')).toBeVisible();
+
+  // 3. Click "Load Sample Vulnerabilities"
+  const loadSampleBtn = page.getByRole('button', { name: /Load Sample Vulnerabilities/i });
+  await loadSampleBtn.click();
+
+  // Configure target project key
+  await page.locator('#target-project-select').fill('DEMO');
+
+  // 4. Verify preview table shows the 6 vulnerability items
+  await expect(page.getByText('Previewing 6 Vulnerability Issue(s)')).toBeVisible();
+  await expect(page.getByText('Password Exposure Vulnerability')).toBeVisible();
+  await expect(page.getByText('Potential Malware in Uploaded File')).toBeVisible();
+  await expect(page.getByText('Sensitive Data Leakage in API Response')).toBeVisible();
+
+  // 5. Click Confirm & Import
+  const confirmBtn = page.getByRole('button', { name: /Confirm & Import 6 Issues to Jira/i });
+  await confirmBtn.click();
+
+  // 6. Verify import results card
+  await expect(page.getByText('Jira Import Results')).toBeVisible();
+  await expect(page.getByText('Created in Jira')).toBeVisible();
+  await expect(page.getByText('DEMO-101')).toBeVisible();
+  await expect(page.getByText('DEMO-106')).toBeVisible();
+
+  // 7. Verify sent headers and payload mapping
+  await expect.poll(() => importHeaders?.['x-user-name']).toBe('Security Auditor');
+  await expect.poll(() => importHeaders?.['x-user-id']).toBe('SEC-99');
+  expect(importPayload?.target_project_key).toBe('DEMO');
+  expect(importPayload?.issues?.length).toBe(6);
+});
+

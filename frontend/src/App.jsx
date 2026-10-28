@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Cable, CheckCircle2, FileText, FolderKanban, RefreshCw, Search, ShieldCheck, X, LoaderCircle, ExternalLink, FileSpreadsheet, User, UserCheck, Sparkles, Smile } from 'lucide-react';
+import {
+  Cable, CheckCircle2, FileText, FolderKanban, RefreshCw, Search,
+  ShieldCheck, X, LoaderCircle, ExternalLink, FileSpreadsheet, User,
+  UserCheck, Sparkles, Smile, ShieldAlert, UploadCloud, AlertTriangle
+} from 'lucide-react';
 
 const DEFAULT_PROD_API = 'https://dudeai.onrender.com';
 const DEFAULT_DEV_API = 'http://127.0.0.1:8000';
@@ -42,6 +46,16 @@ export default function App() {
   const [tempUserId, setTempUserId] = useState(userProfile.userId || '');
   const [validationError, setValidationError] = useState('');
 
+  // Security Vulnerability JSON Import state
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importJsonText, setImportJsonText] = useState('');
+  const [previewIssues, setPreviewIssues] = useState([]);
+  const [detectedProjectKeys, setDetectedProjectKeys] = useState([]);
+  const [targetProjectKey, setTargetProjectKey] = useState('');
+  const [jsonValidationResult, setJsonValidationResult] = useState(null);
+  const [importResults, setImportResults] = useState(null);
+  const [isValidatingJson, setIsValidatingJson] = useState(false);
+
   const clickCounts = useRef({});
   const busyRef = useRef('');
   const testRunId = useRef(`RUN-${new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14)}`);
@@ -50,6 +64,12 @@ export default function App() {
   useEffect(() => {
     userProfileRef.current = userProfile;
   }, [userProfile]);
+
+  useEffect(() => {
+    if (projectKey && !targetProjectKey) {
+      setTargetProjectKey(projectKey);
+    }
+  }, [projectKey, targetProjectKey]);
 
   async function request(path, options = {}) {
     const headers = {
@@ -209,7 +229,10 @@ export default function App() {
         body: JSON.stringify(credentials())
       });
       setProjects(result.projects || []);
-      if (!projectKey && result.projects?.length) setProjectKey(result.projects[0].key);
+      if (!projectKey && result.projects?.length) {
+        setProjectKey(result.projects[0].key);
+        if (!targetProjectKey) setTargetProjectKey(result.projects[0].key);
+      }
       setConnected(true);
       setConnectionMessage(`${result.count} accessible project(s) found`);
       setPage('Projects');
@@ -271,6 +294,107 @@ export default function App() {
       document.body.removeChild(link);
       window.URL.revokeObjectURL(blobUrl);
       setNotice({ type: 'success', text: 'Excel report (api_audit_tracker.xlsx) downloaded successfully.' });
+      await finishButtonAction(action, 'accepted-success', status);
+    } catch (error) {
+      setNotice({ type: 'error', text: error.message });
+      await finishButtonAction(action, 'failed', status || 'error', error.message);
+    }
+  }
+
+  async function validateJsonString(content) {
+    setIsValidatingJson(true);
+    setJsonValidationResult(null);
+    setImportResults(null);
+    try {
+      const res = await request('/api/jira/validate-import-json', {
+        method: 'POST',
+        actionName: 'Validate vulnerability JSON',
+        body: JSON.stringify({ raw_json: content })
+      });
+      setJsonValidationResult(res);
+      if (res.valid) {
+        setPreviewIssues(res.issues || []);
+        setDetectedProjectKeys(res.detected_project_keys || []);
+        if (projectKey) {
+          setTargetProjectKey(projectKey);
+        } else if (projects.length > 0) {
+          setTargetProjectKey(projects[0].key);
+        }
+      } else {
+        setPreviewIssues([]);
+      }
+    } catch (err) {
+      setJsonValidationResult({ valid: false, error: err.message, message: 'JSON validation failed.' });
+      setPreviewIssues([]);
+    } finally {
+      setIsValidatingJson(false);
+    }
+  }
+
+  function handleFileSelect(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target.result;
+      setImportJsonText(text);
+      validateJsonString(text);
+    };
+    reader.readAsText(file);
+  }
+
+  async function loadSampleVulnerabilities() {
+    setIsValidatingJson(true);
+    setNotice(null);
+    try {
+      const res = await fetch('/security_vulnerabilities.json');
+      if (!res.ok) throw new Error('Could not load sample security vulnerabilities file');
+      const text = await res.text();
+      setImportJsonText(text);
+      await validateJsonString(text);
+    } catch (err) {
+      setJsonValidationResult({ valid: false, error: err.message });
+    } finally {
+      setIsValidatingJson(false);
+    }
+  }
+
+  async function handleImportVulnerabilities() {
+    if (!previewIssues.length) {
+      setNotice({ type: 'error', text: 'No validated issues to import. Please upload or load a JSON file first.' });
+      return;
+    }
+    const finalProject = (targetProjectKey || projectKey || '').trim().toUpperCase();
+    if (!finalProject) {
+      setNotice({ type: 'error', text: 'Please select or enter a target Jira project key.' });
+      return;
+    }
+    if (!form.base_url.trim() || !form.email.trim() || !form.api_token) {
+      setNotice({ type: 'error', text: 'Please fill in your Jira connection details (base URL, email, API token) in the Jira connection tab first.' });
+      return;
+    }
+
+    const action = startButtonAction('Import vulnerabilities', '/api/jira/import-vulnerabilities');
+    if (!action) return;
+    setNotice(null);
+    setImportResults(null);
+    let status = '';
+    try {
+      const result = await request('/api/jira/import-vulnerabilities', {
+        method: 'POST',
+        actionName: action.buttonName,
+        headers: { 'X-Click-ID': action.clickId },
+        body: JSON.stringify({
+          ...credentials(),
+          target_project_key: finalProject,
+          issues: previewIssues.map(i => i.raw || i),
+          skip_duplicates: true
+        })
+      });
+      status = 200;
+      setImportResults(result);
+      await loadDocuments();
+      setNotice({ type: 'success', text: result.message });
       await finishButtonAction(action, 'accepted-success', status);
     } catch (error) {
       setNotice({ type: 'error', text: error.message });
@@ -366,6 +490,239 @@ export default function App() {
         </div>
       )}
 
+      {/* Security Vulnerability JSON Importer Modal */}
+      {showImportModal && (
+        <div className="import-overlay" role="dialog" aria-modal="true" aria-labelledby="import-modal-title">
+          <div className="import-modal">
+            <div className="import-modal-header">
+              <div className="import-modal-title-group">
+                <div className="import-icon">
+                  <ShieldAlert size={24} />
+                </div>
+                <div>
+                  <h2 id="import-modal-title">Import Security Vulnerabilities to Jira</h2>
+                  <p>Upload a Jira-style JSON file or load the sample file to preview and import issues.</p>
+                </div>
+              </div>
+              <button
+                className="import-close-btn"
+                onClick={() => { setShowImportModal(false); }}
+                aria-label="Close dialog"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="import-modal-body">
+              {/* Target Project Row */}
+              <div className="import-config-row">
+                <label htmlFor="target-project-select">
+                  <b>Target Jira Project Key</b>
+                  <span className="field-tag">DESTINATION</span>
+                </label>
+                <div className="target-project-picker">
+                  {projects.length > 0 ? (
+                    <select
+                      id="target-project-select"
+                      value={targetProjectKey || projectKey}
+                      onChange={e => setTargetProjectKey(e.target.value)}
+                    >
+                      {projects.map(p => (
+                        <option key={p.key} value={p.key}>{p.name} ({p.key})</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      id="target-project-select"
+                      type="text"
+                      placeholder="e.g. DEMO"
+                      value={targetProjectKey || projectKey}
+                      onChange={e => setTargetProjectKey(e.target.value.toUpperCase())}
+                    />
+                  )}
+                  <small className="project-helper-text">
+                    {detectedProjectKeys.length > 0 && !detectedProjectKeys.includes(targetProjectKey || projectKey)
+                      ? `Note: Issues in JSON declare project "${detectedProjectKeys.join(', ')}". They will be mapped and imported into your configured Jira project "${targetProjectKey || projectKey || '...'}" instead of assuming ${detectedProjectKeys.join(', ')} exists.`
+                      : 'Issues will be imported into this active Jira project.'}
+                  </small>
+                </div>
+              </div>
+
+              {/* Upload & Sample Buttons */}
+              <div className="import-upload-zone">
+                <div className="upload-file-box">
+                  <label htmlFor="vuln-file-input" className="file-input-label">
+                    <UploadCloud size={18} />
+                    <span>Choose JSON File</span>
+                    <input
+                      id="vuln-file-input"
+                      type="file"
+                      accept=".json,application/json"
+                      onChange={handleFileSelect}
+                    />
+                  </label>
+                </div>
+                <span className="or-divider">OR</span>
+                <button
+                  type="button"
+                  id="load-sample-btn"
+                  className="button secondary load-sample-btn"
+                  onClick={loadSampleVulnerabilities}
+                  disabled={isValidatingJson}
+                >
+                  {isValidatingJson ? <LoaderCircle className="spin" size={15}/> : <ShieldAlert size={15}/>}
+                  <span>Load Sample Vulnerabilities (6 Issues)</span>
+                </button>
+              </div>
+
+              {/* Validation Status */}
+              {isValidatingJson && (
+                <div className="validating-banner">
+                  <LoaderCircle className="spin" size={16}/>
+                  <span>Validating JSON structure and fields...</span>
+                </div>
+              )}
+
+              {jsonValidationResult && !jsonValidationResult.valid && (
+                <div className="notice error">
+                  <AlertTriangle size={18} />
+                  <p>{jsonValidationResult.error || jsonValidationResult.message}</p>
+                </div>
+              )}
+
+              {/* Preview Table */}
+              {previewIssues.length > 0 && (
+                <div className="preview-section">
+                  <div className="preview-heading">
+                    <div>
+                      <h3>Previewing {previewIssues.length} Vulnerability Issue(s)</h3>
+                      <p>Review the mapped fields before confirming creation in Jira project <b>{targetProjectKey || projectKey}</b>.</p>
+                    </div>
+                    <span className="state-pill good">{previewIssues.length} Valid Records</span>
+                  </div>
+
+                  <div className="preview-table-wrap">
+                    <table className="preview-table">
+                      <thead>
+                        <tr>
+                          <th>#</th>
+                          <th>Type</th>
+                          <th>Priority</th>
+                          <th>Summary</th>
+                          <th>Labels</th>
+                          <th>Description Preview</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {previewIssues.map((issue, idx) => (
+                          <tr key={idx}>
+                            <td>{idx + 1}</td>
+                            <td><span className="type-badge">{issue.issuetype}</span></td>
+                            <td>
+                              <span className={`priority-badge ${issue.priority.toLowerCase()}`}>
+                                {issue.priority}
+                              </span>
+                            </td>
+                            <td className="summary-cell"><b>{issue.summary}</b></td>
+                            <td>
+                              <div className="labels-wrap">
+                                {(issue.labels || []).map((l, i) => (
+                                  <span key={i} className="label-tag">{l}</span>
+                                ))}
+                              </div>
+                            </td>
+                            <td className="desc-preview-cell">{issue.description_preview}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="vulnerability-disclaimer">
+                    <ShieldCheck size={16}/>
+                    <span>Sample vulnerabilities are test templates for validation. Real passwords, user secrets, and tokens are never included.</span>
+                  </div>
+
+                  {/* Confirmation Button */}
+                  <div className="import-action-bar">
+                    <button
+                      id="confirm-import-btn"
+                      className="button primary confirm-import-btn"
+                      onClick={handleImportVulnerabilities}
+                      disabled={busy === 'Import vulnerabilities'}
+                    >
+                      {busy === 'Import vulnerabilities' ? (
+                        <><LoaderCircle className="spin" size={17}/> Importing into Jira...</>
+                      ) : (
+                        <><Sparkles size={17}/> Confirm & Import {previewIssues.length} Issues to Jira</>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Import Results View */}
+              {importResults && (
+                <div className="import-results-card">
+                  <div className="results-header">
+                    <CheckCircle2 size={20} className="success-icon" />
+                    <div>
+                      <h3>Jira Import Results</h3>
+                      <p>{importResults.message}</p>
+                    </div>
+                  </div>
+
+                  <div className="results-stats">
+                    <div className="stat-box created">
+                      <span>Created in Jira</span>
+                      <b>{importResults.created}</b>
+                    </div>
+                    <div className="stat-box skipped">
+                      <span>Skipped (Duplicates)</span>
+                      <b>{importResults.skipped}</b>
+                    </div>
+                    <div className="stat-box failed">
+                      <span>Failed</span>
+                      <b>{importResults.failed}</b>
+                    </div>
+                  </div>
+
+                  {importResults.results && importResults.results.length > 0 && (
+                    <div className="results-list">
+                      <h4>Issue Breakdown</h4>
+                      {importResults.results.map((r, i) => (
+                        <div key={i} className={`result-row ${r.status}`}>
+                          <span className={`status-pill ${r.status}`}>{r.status.toUpperCase()}</span>
+                          <span className="result-summary">{r.summary}</span>
+                          {r.issue_key && (
+                            <a href={r.browse_url} target="_blank" rel="noreferrer" className="result-link">
+                              {r.issue_key} <ExternalLink size={12}/>
+                            </a>
+                          )}
+                          {r.error && <span className="result-error">{r.error}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="results-footer">
+                    <button
+                      className="button secondary small"
+                      onClick={() => {
+                        setShowImportModal(false);
+                        setPage('Documents');
+                      }}
+                    >
+                      <FileText size={15}/> View in Documents
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <aside className="sidebar">
         <div className="brand"><img className="brand-logo" src="/dude-ai-logo.png" alt="Dude AI logo" /></div>
         <nav aria-label="Main navigation">
@@ -394,6 +751,18 @@ export default function App() {
                 <span className="user-badge-id">({userProfile.userId})</span>
               </button>
             )}
+            <button
+              className="button secondary small import-vuln-btn"
+              onClick={() => {
+                if (projectKey && !targetProjectKey) setTargetProjectKey(projectKey);
+                setShowImportModal(true);
+              }}
+              title="Import security vulnerabilities from JSON into Jira"
+              type="button"
+            >
+              <ShieldAlert size={15}/>
+              <span>Import Vulnerabilities</span>
+            </button>
             <button className="button secondary small download-report-btn" onClick={downloadExcelReport} title="Download Excel audit tracker workbook">
               {busy === 'Download Excel report' ? <LoaderCircle className="spin" size={15}/> : <FileSpreadsheet size={15}/>}
               <span>Download Excel Report</span>
@@ -499,7 +868,7 @@ export default function App() {
               <div className="section-heading">
                 <div>
                   <h2>Accessible Jira projects</h2>
-                  <p>Load projects, select one, then import its issues.</p>
+                  <p>Load projects, select one, then import its issues or vulnerabilities.</p>
                 </div>
                 <button className="button secondary small" onClick={loadProjects}><RefreshCw size={15}/>Refresh projects</button>
               </div>
@@ -510,7 +879,10 @@ export default function App() {
                       <button
                         key={project.id || project.key}
                         className={projectKey === project.key ? 'project-option selected' : 'project-option'}
-                        onClick={() => setProjectKey(project.key)}
+                        onClick={() => {
+                          setProjectKey(project.key);
+                          setTargetProjectKey(project.key);
+                        }}
                       >
                         <FolderKanban size={20}/>
                         <span>
@@ -526,10 +898,23 @@ export default function App() {
                       <b>{projectKey || 'Select a project'}</b>
                       <small>Selected project key</small>
                     </div>
-                    <button className="button primary" disabled={!projectKey} onClick={fetchDocuments}>
-                      {busy === 'Fetch documents' ? <LoaderCircle className="spin" size={17}/> : <FileText size={17}/>}
-                      Fetch documents
-                    </button>
+                    <div className="project-actions-group">
+                      <button
+                        className="button secondary"
+                        type="button"
+                        onClick={() => {
+                          if (projectKey) setTargetProjectKey(projectKey);
+                          setShowImportModal(true);
+                        }}
+                      >
+                        <ShieldAlert size={17} />
+                        Import Vulnerabilities (JSON)
+                      </button>
+                      <button className="button primary" disabled={!projectKey} onClick={fetchDocuments}>
+                        {busy === 'Fetch documents' ? <LoaderCircle className="spin" size={17}/> : <FileText size={17}/>}
+                        Fetch documents
+                      </button>
+                    </div>
                   </div>
                 </>
               ) : (
@@ -551,10 +936,23 @@ export default function App() {
                   <Search size={16}/>
                   <input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search issues..."/>
                 </div>
-                <button className="button secondary small download-report-btn" onClick={downloadExcelReport}>
-                  {busy === 'Download Excel report' ? <LoaderCircle className="spin" size={15}/> : <FileSpreadsheet size={15}/>}
-                  <span>Download Excel Report</span>
-                </button>
+                <div className="documents-action-group">
+                  <button
+                    className="button secondary small"
+                    onClick={() => {
+                      if (projectKey && !targetProjectKey) setTargetProjectKey(projectKey);
+                      setShowImportModal(true);
+                    }}
+                    type="button"
+                  >
+                    <ShieldAlert size={15}/>
+                    <span>Import JSON</span>
+                  </button>
+                  <button className="button secondary small download-report-btn" onClick={downloadExcelReport}>
+                    {busy === 'Download Excel report' ? <LoaderCircle className="spin" size={15}/> : <FileSpreadsheet size={15}/>}
+                    <span>Download Excel Report</span>
+                  </button>
+                </div>
               </div>
               <div className="section-heading">
                 <div>
@@ -598,7 +996,7 @@ export default function App() {
                 <div className="empty-state">
                   <FileText size={30}/>
                   <h3>{search ? 'No matching issues' : 'No documents imported yet'}</h3>
-                  <p>{search ? 'Try another keyword.' : 'Open Projects, select a project, and click Fetch documents.'}</p>
+                  <p>{search ? 'Try another keyword, or click Import Vulnerabilities.' : 'Open Projects, select a project, and click Fetch documents or Import Vulnerabilities.'}</p>
                   <button className="button primary" onClick={() => setPage('Projects')}>Open projects</button>
                 </div>
               )}
