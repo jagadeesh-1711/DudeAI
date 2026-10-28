@@ -152,7 +152,7 @@ export default function App() {
           {visibleDocuments.length ? <div className="table-wrap"><table><thead><tr><th>Issue</th><th>Summary</th><th>Project</th><th>Status</th><th>Assignee</th><th>Updated</th></tr></thead><tbody>{visibleDocuments.map(item => <tr key={item.issue_key}><td><a href={item.browse_url} target="_blank" rel="noreferrer">{item.issue_key} <ExternalLink size={12}/></a></td><td className="summary-cell">{item.summary}</td><td>{item.project_key}</td><td><span className="issue-status">{item.status || 'Unknown'}</span></td><td>{item.assignee || 'Unassigned'}</td><td>{item.updated_at ? new Date(item.updated_at).toLocaleDateString() : '—'}</td></tr>)}</tbody></table></div> : <div className="empty-state"><FileText size={30}/><h3>{search ? 'No matching issues' : 'No documents imported yet'}</h3><p>{search ? 'Try another keyword.' : 'Open Projects, select a project, and click Fetch documents.'}</p><button className="button primary" onClick={() => setPage('Projects')}>Open projects</button></div>}
         </section>}
       </section>
-      <footer><span>Dude AI · Knowledge Hub</span><span><i/> {isLocalApi ? 'Local API connected' : 'Cloud API connected'}</span></footer>
+      <footer><span>Dude AI · For Testing Project</span><span><i/> {isLocalApi ? 'Local API connected' : 'Cloud API connected'}</span></footer>
     </main>
   </div>;
 }
