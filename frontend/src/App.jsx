@@ -1005,7 +1005,7 @@ export default function App() {
         </section>
 
         <footer>
-          <span>Dude AI · Knowledge Hub</span>
+          <span>Dude AI · For Testing Project</span>
           <span><i/> {isLocalApi ? 'Local API connected' : 'Cloud API connected'}</span>
         </footer>
       </main>
