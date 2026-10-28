@@ -15,3 +15,44 @@ body{background:radial-gradient(ellipse at 85% 0%,#e7f3ff 0,transparent 38%),#f5
 @keyframes symbolPulse{0%,100%{box-shadow:0 0 0 0 #5479ff00;transform:translateY(0)}50%{box-shadow:0 0 0 7px #5479ff0b;transform:translateY(-2px)}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:.01ms!important}}
 @media(max-width:700px){.brand-logo{width:190px;max-width:72vw}.sidebar{background:linear-gradient(180deg,#fbfcff,#f0f5ff)}}
+.topbar-actions{display:flex;align-items:center;gap:12px}
+.download-report-btn{display:inline-flex;align-items:center;gap:7px;font-weight:600;white-space:nowrap}
+@media(max-width:700px){.topbar-actions{gap:8px}.download-report-btn span{display:none}.download-report-btn{padding:8px}}
+
+/* Welcome & User Details Modal */
+.welcome-overlay{position:fixed;inset:0;background:rgba(15,23,42,.65);backdrop-filter:blur(8px);display:grid;place-items:center;z-index:1000;padding:20px;animation:modalFadeIn .25s ease-out}
+.welcome-modal{background:#ffffff;border:1px solid #dce5f5;border-radius:20px;box-shadow:0 20px 50px rgba(27,49,102,.2);width:100%;max-width:480px;padding:32px 28px;position:relative;animation:modalSlideUp .3s cubic-bezier(.16,1,.3,1)}
+.welcome-header{text-align:center;margin-bottom:24px}
+.welcome-icon{width:56px;height:56px;border-radius:18px;background:linear-gradient(135deg,#e4f4ff,#ede8ff);color:#316bff;display:grid;place-items:center;margin:0 auto 16px;box-shadow:0 8px 18px rgba(49,107,255,.15)}
+.welcome-title{font-family:'Plus Jakarta Sans',sans-serif;font-size:20px;font-weight:800;color:#17233f;margin:0 0 8px;letter-spacing:-.03em}
+.welcome-message{font-size:13px;color:#72809b;line-height:1.55;margin:0}
+.welcome-form{display:grid;gap:18px}
+.welcome-field{display:grid;gap:7px}
+.welcome-field label{font-size:12px;font-weight:700;color:#253858;display:flex;justify-content:space-between;align-items:center}
+.field-tag{font-size:9px;letter-spacing:.7px;color:#9ba5b8;font-weight:600}
+.welcome-field input{width:100%;border:1px solid #dce5f4;background:#fbfcff;border-radius:10px;padding:12px 14px;outline:none;color:#17233f;font-size:13px;transition:all .2s ease}
+.welcome-field input:focus{border-color:#6d8fff;background:#fff;box-shadow:0 0 0 4px rgba(71,124,255,.12)}
+.welcome-field small{font-size:11px;color:#8c97ab;line-height:1.4}
+.welcome-error{background:#fff0ef;border:1px solid #fcdbd8;color:#c94945;padding:10px 12px;border-radius:8px;font-size:12px;display:flex;align-items:center;gap:8px}
+.welcome-actions{display:grid;gap:9px;margin-top:6px}
+.welcome-submit-btn{width:100%;padding:13px 18px;font-size:13px;font-weight:700;border-radius:10px}
+.welcome-cancel-btn{width:100%;padding:10px 16px;font-size:12px}
+
+/* Topbar User Badge */
+.user-badge{display:inline-flex;align-items:center;gap:7px;background:#edf4fe;border:1px solid #dbe6fa;color:#244fcb;padding:6px 12px;border-radius:20px;font-size:11px;font-weight:600;cursor:pointer;transition:all .2s ease}
+.user-badge:hover{background:#e3effe;border-color:#c6dcfe;transform:translateY(-1px)}
+.user-badge-id{color:#6a7c9d;font-weight:400;font-size:10px}
+
+/* Identity Card in Jira Connection status */
+.identity-card{margin-top:18px;padding:14px 16px;border-radius:12px;text-align:left;font-size:11px;background:#f7f9fd;border:1px solid #dce5f4}
+.identity-card.verified{background:#edf9f2;border-color:#c9efdb;color:#077953}
+.identity-card.internal{background:#f8f9fc;border-color:#e2e8f0;color:#334155}
+.identity-card-header{display:flex;align-items:center;gap:7px;margin-bottom:8px;font-weight:700;font-size:12px}
+.identity-field{display:flex;justify-content:space-between;margin-bottom:4px;gap:8px}
+.identity-field span{color:#72809b}
+.identity-field b{color:#17233f;overflow-wrap:anywhere}
+.identity-note{margin:8px 0 0;font-size:10px;line-height:1.45;color:#55657e;border-top:1px solid rgba(0,0,0,.06);padding-top:6px}
+
+@keyframes modalFadeIn{from{opacity:0}to{opacity:1}}
+@keyframes modalSlideUp{from{opacity:0;transform:translateY(16px) scale(.97)}to{opacity:1;transform:translateY(0) scale(1)}}
+

@@ -13,13 +13,15 @@ from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
 
 import httpx
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse
 from pydantic import BaseModel, HttpUrl, Field
 
-DB_FILE = Path(__file__).with_name("dude_ai.db")
-EXCEL_FILE = Path(__file__).with_name("api_audit_tracker.xlsx")
+DATA_DIR = Path(os.environ.get("DATA_DIR", Path(__file__).parent)).resolve()
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+DB_FILE = DATA_DIR / "dude_ai.db"
+EXCEL_FILE = DATA_DIR / "api_audit_tracker.xlsx"
 EXCEL_LOCK = Lock()
 ACTIVE_ACTIONS = set()
 ACTIVE_ACTIONS_LOCK = Lock()
@@ -39,15 +41,19 @@ def style_sheet(ws):
 
 
 def ensure_excel_tracker():
+    EXCEL_FILE.parent.mkdir(parents=True, exist_ok=True)
     if EXCEL_FILE.exists():
         # Migrate workbooks created by earlier versions without deleting existing audit history.
         with EXCEL_LOCK:
             wb = load_workbook(EXCEL_FILE)
             required = {
+                "API Call Log": ["Timestamp", "User Name", "User ID", "Method", "Path", "Status", "Duration ms", "Frontend action", "Click ID", "Blocked", "Frontend duration ms", "Backend duration ms", "Jira duration ms", "Test case ID", "Environment", "Notes"],
                 "Jira API Call Log": ["Timestamp", "Frontend action", "Jira endpoint", "HTTP status", "Duration ms", "Result", "Notes"],
-                "Button Click Log": ["Timestamp", "Button / Action", "Click ID", "Click number", "Outcome", "Block reason", "Frontend route", "API endpoint", "HTTP status", "Duration ms", "Test run ID"],
+                "Button Click Log": ["Timestamp", "User Name", "User ID", "Button / Action", "Click ID", "Click number", "Outcome", "Block reason", "Frontend route", "API endpoint", "HTTP status", "Duration ms", "Test run ID"],
                 "Button Click Summary": ["Button / Action", "Total clicks", "Accepted clicks", "Blocked clicks", "Backend calls", "Jira calls", "Pass count", "Fail count", "Notes"],
                 "QA Test Cases": ["Test Case ID", "Area", "Scenario", "Test Type", "Priority", "Preconditions", "Steps", "Expected Result", "Actual Result", "Status", "Evidence / Defect ID", "Standard / Rationale"],
+                "Imported Jira Issues": ["Imported At", "Issue Key", "Project Key", "Summary", "Status", "Assignee", "Updated At", "Jira URL", "Imported By", "User ID"],
+                "Frontend Backend Map": ["Frontend file", "Frontend function / action", "HTTP method", "API endpoint", "Backend handler", "Purpose"],
             }
             changed = False
             for name, headers in required.items():
@@ -55,6 +61,17 @@ def ensure_excel_tracker():
                     ws = wb.create_sheet(name)
                     ws.append(headers)
                     changed = True
+                else:
+                    ws = wb[name]
+                    current_headers = [cell.value for cell in ws[1]]
+                    if "User Name" in headers and "User Name" not in current_headers:
+                        for col_idx, h_val in enumerate(headers, 1):
+                            ws.cell(row=1, column=col_idx, value=h_val)
+                        changed = True
+                    elif "Imported By" in headers and "Imported By" not in current_headers:
+                        for col_idx, h_val in enumerate(headers, 1):
+                            ws.cell(row=1, column=col_idx, value=h_val)
+                        changed = True
             if "API Call Log" in wb.sheetnames and wb["API Call Log"].max_row == 1:
                 wb["API Call Log"][1][0].value = "Timestamp"
             if changed:
@@ -65,11 +82,11 @@ def ensure_excel_tracker():
     wb = Workbook()
     api = wb.active
     api.title = "API Call Log"
-    api.append(["Timestamp", "Method", "Path", "Status", "Duration ms", "Frontend action", "Click ID", "Blocked", "Frontend duration ms", "Backend duration ms", "Jira duration ms", "Test case ID", "Environment", "Notes"])
+    api.append(["Timestamp", "User Name", "User ID", "Method", "Path", "Status", "Duration ms", "Frontend action", "Click ID", "Blocked", "Frontend duration ms", "Backend duration ms", "Jira duration ms", "Test case ID", "Environment", "Notes"])
     jira_log = wb.create_sheet("Jira API Call Log")
     jira_log.append(["Timestamp", "Frontend action", "Jira endpoint", "HTTP status", "Duration ms", "Result", "Notes"])
     clicks = wb.create_sheet("Button Click Log")
-    clicks.append(["Timestamp", "Button / Action", "Click ID", "Click number", "Outcome", "Block reason", "Frontend route", "API endpoint", "HTTP status", "Duration ms", "Test run ID"])
+    clicks.append(["Timestamp", "User Name", "User ID", "Button / Action", "Click ID", "Click number", "Outcome", "Block reason", "Frontend route", "API endpoint", "HTTP status", "Duration ms", "Test run ID"])
     summary = wb.create_sheet("Button Click Summary")
     summary.append(["Button / Action", "Total clicks", "Accepted clicks", "Blocked clicks", "Backend calls", "Jira calls", "Pass count", "Fail count", "Notes"])
     qa = wb.create_sheet("QA Test Cases")
@@ -85,19 +102,22 @@ def ensure_excel_tracker():
         ["SEC-001", "Security", "Credentials and tokens are excluded from logs", "Security / Privacy", "Critical", "Test credentials", "Perform connection test and inspect logs/workbook", "No API token, password or request body appears in logs", "", "Not Run", "", "Sensitive-data minimization"],
         ["E2E-001", "End-to-end", "Connect, load projects, import and view issues", "E2E / Smoke", "High", "Dedicated Jira test project", "Run the user journey", "Projects and imported issues display correctly; timings recorded", "", "Not Run", "", "Playwright isolated tests and user-visible assertions"],
         ["ERR-001", "Resilience", "Jira timeout or server error is handled", "Negative / Resilience", "Medium", "Mock or controlled failing endpoint", "Simulate timeout / 5xx", "Action finishes safely, error shown, lock released", "", "Not Run", "", "Error-path and recovery testing"],
+        ["USR-001", "Identity", "Welcome username and user ID collected", "User Flow / Identity", "High", "App loaded", "Enter username and user ID and submit", "Personalized greeting shown; headers passed to backend; internal ID logged", "", "Not Run", "", "User identity onboarding and audit attribution"],
     ]
     for row in qa_rows:
         qa.append(row)
     docs = wb.create_sheet("Imported Jira Issues")
-    docs.append(["Imported At", "Issue Key", "Project Key", "Summary", "Status", "Assignee", "Updated At", "Jira URL"])
+    docs.append(["Imported At", "Issue Key", "Project Key", "Summary", "Status", "Assignee", "Updated At", "Jira URL", "Imported By", "User ID"])
     mapping = wb.create_sheet("Frontend Backend Map")
     mapping.append(["Frontend file", "Frontend function / action", "HTTP method", "API endpoint", "Backend handler", "Purpose"])
     mapping_rows = [
-        ["frontend/src/App.jsx", "request() on Test connection", "POST", "/api/jira/test-connection", "test_connection()", "Verify Jira email and API token."],
+        ["frontend/src/App.jsx", "Welcome / user identity flow", "HEADER", "X-User-Name, X-User-ID", "record_api_call()", "Pass user identity for audit attribution and Jira mapping."],
+        ["frontend/src/App.jsx", "request() on Test connection", "POST", "/api/jira/test-connection", "test_connection()", "Verify Jira email and API token, validate entered user ID against Jira accountId."],
         ["frontend/src/App.jsx", "loadProjects()", "POST", "/api/jira/projects", "get_projects()", "List Jira projects the account can access."],
-        ["frontend/src/App.jsx", "fetchDocuments()", "POST", "/api/jira/fetch-documents", "fetch_documents()", "Fetch Jira issues and save/update local records."],
+        ["frontend/src/App.jsx", "fetchDocuments()", "POST", "/api/jira/fetch-documents", "fetch_documents()", "Fetch Jira issues and save/update local records with user attribution."],
         ["frontend/src/App.jsx", "loadDocuments()", "GET", "/api/documents?limit=500", "documents()", "Load locally imported issues for the Documents page."],
         ["frontend/src/App.jsx", "topbar refresh button", "GET", "/api/documents?limit=500", "documents()", "Refresh the visible local issue list."],
+        ["frontend/src/App.jsx", "Download Excel report button", "GET", "/api/reports/excel", "download_excel_report()", "Download the api_audit_tracker.xlsx workbook."],
         ["Browser / health check", "API status", "GET", "/api/health", "health()", "Check whether the local backend is running."],
         ["Browser / API docs", "Swagger UI", "GET", "/docs", "FastAPI generated docs", "Inspect and test endpoints locally."],
     ]
@@ -105,7 +125,8 @@ def ensure_excel_tracker():
         mapping.append(row)
     for ws in wb.worksheets:
         style_sheet(ws)
-    wb.save(EXCEL_FILE)
+    with EXCEL_LOCK:
+        wb.save(EXCEL_FILE)
 
 def append_excel(sheet_name, row):
     ensure_excel_tracker()
@@ -116,8 +137,8 @@ def append_excel(sheet_name, row):
         style_sheet(ws)
         wb.save(EXCEL_FILE)
 
-def log_api_call(method: str, path: str, status: int, duration_ms: float, frontend_action: str = "", click_id: str = "", blocked: bool = False):
-    append_excel("API Call Log", [datetime.now().astimezone().isoformat(timespec="seconds"), method, path, status, round(duration_ms, 2), frontend_action, click_id, "Yes" if blocked else "No", "", round(duration_ms, 2), "", "", "Local", "No request body or credentials are recorded."])
+def log_api_call(method: str, path: str, status: int, duration_ms: float, frontend_action: str = "", click_id: str = "", blocked: bool = False, user_name: str = "", user_id: str = ""):
+    append_excel("API Call Log", [datetime.now().astimezone().isoformat(timespec="seconds"), user_name, user_id, method, path, status, round(duration_ms, 2), frontend_action, click_id, "Yes" if blocked else "No", "", round(duration_ms, 2), "", "", "Cloud" if "onrender.com" in path else "Local", "No request body or credentials are recorded."])
 
 def log_jira_api_call(action: str, endpoint: str, status: int, duration_ms: float):
     append_excel("Jira API Call Log", [datetime.now().astimezone().isoformat(timespec="seconds"), action, endpoint, status, round(duration_ms, 2), "Success" if 200 <= status < 400 else "Failed", "Endpoint only; credentials and request bodies are never logged."])
@@ -139,15 +160,38 @@ async def timed_jira_get(client: httpx.AsyncClient, endpoint: str, action: str, 
 
 
 def log_button_event(event: dict):
-    append_excel("Button Click Log", [datetime.now().astimezone().isoformat(timespec="seconds"), event.get("button_name", "Unknown"), event.get("click_id", ""), event.get("click_number", 1), event.get("outcome", "accepted"), event.get("block_reason", ""), event.get("frontend_route", ""), event.get("api_endpoint", ""), event.get("http_status", ""), event.get("duration_ms", ""), event.get("test_run_id", "")])
+    append_excel("Button Click Log", [
+        datetime.now().astimezone().isoformat(timespec="seconds"),
+        event.get("user_name", ""),
+        event.get("user_id", ""),
+        event.get("button_name", "Unknown"),
+        event.get("click_id", ""),
+        event.get("click_number", 1),
+        event.get("outcome", "accepted"),
+        event.get("block_reason", ""),
+        event.get("frontend_route", ""),
+        event.get("api_endpoint", ""),
+        event.get("http_status", ""),
+        event.get("duration_ms", ""),
+        event.get("test_run_id", "")
+    ])
     # Recalculate the summary from the detailed event log so blocked attempts are counted too.
     with EXCEL_LOCK:
         wb = load_workbook(EXCEL_FILE)
         ws = wb["Button Click Log"]
+        header_row = [str(c.value or "").strip().lower() for c in ws[1]]
+        name_col = header_row.index("button / action") if "button / action" in header_row else 3
+        click_col = header_row.index("click id") if "click id" in header_row else 4
+        outcome_col = header_row.index("outcome") if "outcome" in header_row else 6
+
         by_click = {}
         for row in ws.iter_rows(min_row=2, values_only=True):
-            name, click_id, outcome = row[1] or "Unknown", row[2] or "", row[4] or "accepted"
-            identity = click_id or f"{name}:{row[0]}:{row[3]}"
+            if not row or len(row) <= name_col:
+                continue
+            name = row[name_col] or "Unknown"
+            click_id = row[click_col] if len(row) > click_col and row[click_col] else ""
+            outcome = row[outcome_col] if len(row) > outcome_col and row[outcome_col] else "accepted"
+            identity = click_id or f"{name}:{row[0]}"
             item = by_click.setdefault((name, identity), {"blocked": False, "accepted": False})
             if outcome == "blocked":
                 item["blocked"] = True
@@ -181,7 +225,7 @@ def log_imported_issues(records):
                 ws.delete_rows(row_index, 1)
         now = datetime.now().astimezone().isoformat(timespec="seconds")
         for record in records:
-            ws.append([now, record["issue_key"], record["project_key"], record["summary"], record["status"], record["assignee"], record["updated_at"], record["browse_url"]])
+            ws.append([now, record["issue_key"], record["project_key"], record["summary"], record["status"], record["assignee"], record["updated_at"], record["browse_url"], record.get("imported_by", ""), record.get("imported_by_id", "")])
         style_sheet(ws)
         wb.save(EXCEL_FILE)
 
@@ -197,7 +241,18 @@ def init_db():
         con.execute("""CREATE TABLE IF NOT EXISTS documents (
             issue_key TEXT PRIMARY KEY, project_key TEXT NOT NULL, summary TEXT NOT NULL,
             description TEXT DEFAULT '', status TEXT DEFAULT '', assignee TEXT DEFAULT '',
-            updated_at TEXT DEFAULT '', browse_url TEXT DEFAULT '')""")
+            updated_at TEXT DEFAULT '', browse_url TEXT DEFAULT '',
+            imported_by TEXT DEFAULT '', imported_by_id TEXT DEFAULT '')""")
+        # Safe migration if table already existed without user columns
+        try:
+            cursor = con.execute("PRAGMA table_info(documents)")
+            cols = {row["name"] for row in cursor.fetchall()}
+            if "imported_by" not in cols:
+                con.execute("ALTER TABLE documents ADD COLUMN imported_by TEXT DEFAULT ''")
+            if "imported_by_id" not in cols:
+                con.execute("ALTER TABLE documents ADD COLUMN imported_by_id TEXT DEFAULT ''")
+        except Exception:
+            pass
 
 
 @asynccontextmanager
@@ -219,6 +274,8 @@ async def record_api_call(request: Request, call_next):
     path = request.url.path + (f"?{request.url.query}" if request.url.query else "")
     action_key = request.headers.get("x-frontend-action", request.url.path)
     click_id = request.headers.get("x-click-id", "")
+    user_name = request.headers.get("x-user-name", "")
+    user_id = request.headers.get("x-user-id", "")
     guarded = request.method == "POST" and request.url.path in {"/api/jira/test-connection", "/api/jira/projects", "/api/jira/fetch-documents"}
     guard_key = request.url.path
     acquired = False
@@ -243,11 +300,13 @@ async def record_api_call(request: Request, call_next):
                 ACTIVE_ACTIONS.discard(guard_key)
         if path.startswith("/api/") and request.url.path != "/api/telemetry/button-event":
             try:
-                log_api_call(request.method, path, status_code, elapsed, action_key, click_id, status_code == 409)
+                log_api_call(request.method, path, status_code, elapsed, action_key, click_id, status_code == 409, user_name=user_name, user_id=user_id)
                 # Record backend-side duplicate rejections in the click log as well,
                 # including requests that bypass the React frontend guard.
                 if guarded and status_code == 409:
                     log_button_event({
+                        "user_name": user_name,
+                        "user_id": user_id,
                         "button_name": action_key or request.url.path,
                         "click_id": click_id or f"backend-blocked-{time.time_ns()}",
                         "click_number": 0,
@@ -300,6 +359,8 @@ app.add_middleware(
 
 
 class ButtonEvent(BaseModel):
+    user_name: str = ""
+    user_id: str = ""
     button_name: str
     click_id: str = ""
     click_number: int = 1
@@ -322,6 +383,8 @@ class Credentials(BaseModel):
     base_url: HttpUrl
     email: str = Field(min_length=3)
     api_token: str = Field(min_length=1)
+    user_name: str | None = None
+    user_id: str | None = None
 
 
 class FetchRequest(Credentials):
@@ -383,14 +446,82 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/api/reports/excel")
+def download_excel_report():
+    try:
+        ensure_excel_tracker()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to generate Excel audit tracker: {exc}")
+
+    if not EXCEL_FILE.exists():
+        raise HTTPException(status_code=404, detail="Excel audit tracker workbook not found.")
+
+    with EXCEL_LOCK:
+        try:
+            with open(EXCEL_FILE, "rb") as f:
+                content = f.read()
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Failed to read Excel workbook: {exc}")
+
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": 'attachment; filename="api_audit_tracker.xlsx"',
+            "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+        },
+    )
+
+
 @app.post("/api/jira/test-connection")
-async def test_connection(body: Credentials):
+async def test_connection(body: Credentials, request: Request):
+    user_name = (body.user_name or request.headers.get("x-user-name", "")).strip()
+    user_id = (body.user_id or request.headers.get("x-user-id", "")).strip()
+
     async with jira_client(body) as client:
         response = await timed_jira_get(client, "/rest/api/3/myself", "Test connection")
     if response.is_error:
         jira_error(response, "connection test")
     user = response.json()
-    return {"success": True, "display_name": user.get("displayName", body.email), "message": "Connected successfully"}
+    jira_display_name = user.get("displayName", body.email)
+    jira_account_id = user.get("accountId", "")
+    jira_email = user.get("emailAddress", body.email)
+
+    identity_status = None
+    if user_id or user_name:
+        is_jira_account = False
+        if user_id and user_id.lower() == jira_account_id.lower():
+            is_jira_account = True
+            msg = f"User ID '{user_id}' verified as your Jira Cloud account ID."
+            status_tag = "verified_jira_account_id"
+        elif user_id and user_id.lower() in [jira_email.lower(), jira_display_name.lower()]:
+            msg = f"User ID matches Jira user '{jira_display_name}', but note Jira Cloud uses accountId ({jira_account_id[:8]}...) for issue assignments."
+            status_tag = "matched_jira_profile"
+        elif user_id:
+            msg = f"User ID '{user_id}' is recorded as an internal application ID. It does not match the authenticated Jira account ID ({jira_account_id[:8]}...)."
+            status_tag = "internal_application_id"
+        else:
+            msg = f"Active session for user '{user_name}'."
+            status_tag = "session_user"
+
+        identity_status = {
+            "user_name": user_name,
+            "user_id": user_id,
+            "status": status_tag,
+            "verified_jira_account": is_jira_account,
+            "jira_account_id": jira_account_id,
+            "jira_display_name": jira_display_name,
+            "message": msg
+        }
+
+    return {
+        "success": True,
+        "display_name": jira_display_name,
+        "jira_account_id": jira_account_id,
+        "identity_status": identity_status,
+        "message": "Connected successfully"
+    }
 
 
 @app.post("/api/jira/projects")
@@ -411,7 +542,9 @@ async def get_projects(body: Credentials):
 
 
 @app.post("/api/jira/fetch-documents")
-async def fetch_documents(body: FetchRequest):
+async def fetch_documents(body: FetchRequest, request: Request):
+    user_name = (body.user_name or request.headers.get("x-user-name", "")).strip()
+    user_id = (body.user_id or request.headers.get("x-user-id", "")).strip()
     project_key = body.project_key.strip().upper()
     jql = f'project = "{project_key}" ORDER BY updated DESC'
     fields = "summary,description,status,assignee,project,updated"
@@ -442,14 +575,17 @@ async def fetch_documents(body: FetchRequest):
             "description": to_text(fields_data.get("description")),
             "status": status.get("name", ""), "assignee": assignee.get("displayName", "Unassigned"),
             "updated_at": fields_data.get("updated", ""),
-            "browse_url": f"{clean_url(str(body.base_url))}/browse/{issue.get('key', '')}"
+            "browse_url": f"{clean_url(str(body.base_url))}/browse/{issue.get('key', '')}",
+            "imported_by": user_name,
+            "imported_by_id": user_id,
         })
     with db() as con:
-        con.executemany("""INSERT INTO documents(issue_key, project_key, summary, description, status, assignee, updated_at, browse_url)
-            VALUES(:issue_key,:project_key,:summary,:description,:status,:assignee,:updated_at,:browse_url)
+        con.executemany("""INSERT INTO documents(issue_key, project_key, summary, description, status, assignee, updated_at, browse_url, imported_by, imported_by_id)
+            VALUES(:issue_key,:project_key,:summary,:description,:status,:assignee,:updated_at,:browse_url,:imported_by,:imported_by_id)
             ON CONFLICT(issue_key) DO UPDATE SET project_key=excluded.project_key, summary=excluded.summary,
             description=excluded.description, status=excluded.status, assignee=excluded.assignee,
-            updated_at=excluded.updated_at, browse_url=excluded.browse_url""", records)
+            updated_at=excluded.updated_at, browse_url=excluded.browse_url,
+            imported_by=excluded.imported_by, imported_by_id=excluded.imported_by_id""", records)
     log_imported_issues(records)
     print("\n" + "=" * 100)
     print(f"[Dude AI] Imported {len(records)} Jira issue(s) from project {project_key}")
