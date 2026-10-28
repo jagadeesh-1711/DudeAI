@@ -10,3 +10,15 @@ services:
         value: 3.11.10
       - key: ALLOWED_ORIGINS
         value: https://dude-ai-roan.vercel.app,https://dudeai.onrender.com
+      - key: DATA_DIR
+        value: backend
+    # Durable persistence across Render redeployments:
+    # On the free tier, files in the container are ephemeral (reset on redeploy/spin-down).
+    # To keep your SQLite DB and Excel workbook across all redeployments on Render:
+    # 1. Upgrade plan to 'starter' (or standard)
+    # 2. Add a persistent disk mounted at /var/data
+    # 3. Set DATA_DIR=/var/data in environment variables
+    # disk:
+    #   name: dudeai-data
+    #   mountPath: /var/data
+    #   sizeGB: 1
