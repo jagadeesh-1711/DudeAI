@@ -128,4 +128,32 @@ body{background:radial-gradient(ellipse at 85% 0%,#e7f3ff 0,transparent 38%),#f5
 .project-actions-group,.documents-action-group{display:flex;align-items:center;gap:9px}
 @media(max-width:700px){.import-upload-zone{flex-direction:column;align-items:stretch}.results-stats{grid-template-columns:1fr}}
 
+/* Security Assistant Banner & Category Selector */
+.security-assistant-card{background:linear-gradient(135deg,#edf5ff,#f5f0ff);border:1px solid #d4e2fc;border-radius:14px;padding:16px 18px;display:flex;align-items:flex-start;gap:14px;margin-bottom:4px}
+.assistant-avatar-badge{width:38px;height:38px;border-radius:12px;background:linear-gradient(135deg,#247cff,#5d48f5);color:white;display:grid;place-items:center;flex-shrink:0;box-shadow:0 4px 12px rgba(49,107,255,.2)}
+.assistant-text-content{flex:1;min-width:0}
+.assistant-welcome-heading{margin:0 0 4px;font-family:'Plus Jakarta Sans',sans-serif;font-size:14px;font-weight:800;color:#17233f}
+.assistant-user-instructions{margin:0;font-size:12px;color:#536482;line-height:1.5}
+.category-selection-container{background:#f8faff;border:1px solid #e2eaf7;border-radius:12px;padding:14px 16px;display:grid;gap:10px}
+.category-selection-header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.category-selection-header label{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:700;color:#1e293b}
+.category-active-count{font-size:11px;font-weight:600;color:#3b82f6;background:#eff6ff;border:1px solid #dbeafe;border-radius:6px;padding:3px 8px}
+.category-selector-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.category-dropdown{border:1px solid #cbd5e1;background:white;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:600;color:#1e293b;outline:none;min-width:220px}
+.category-dropdown:focus{border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.15)}
+.category-quick-pills{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.category-pill{border:1px solid #e2e8f0;background:white;color:#64748b;font-size:11px;font-weight:600;padding:5px 10px;border-radius:20px;cursor:pointer;transition:all .18s}
+.category-pill:hover{border-color:#93c5fd;color:#1d4ed8;background:#f8faff}
+.category-pill.active{background:#2563eb;color:white;border-color:#2563eb;box-shadow:0 2px 8px rgba(37,99,235,.2)}
+.category-badge{background:#f1f5f9;color:#334155;border:1px solid #e2e8f0;border-radius:6px;padding:2px 7px;font-weight:700;font-size:10px;white-space:nowrap}
+.severity-badge{border-radius:6px;padding:2px 7px;font-weight:800;font-size:10px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap}
+.severity-badge.critical{background:#fee2e2;color:#991b1b;border:1px solid #fecaca}
+.severity-badge.high{background:#ffedd5;color:#9a3412;border:1px solid #fed7aa}
+.severity-badge.medium{background:#fef3c7;color:#92400e;border:1px solid #fde68a}
+.severity-badge.low{background:#e0f2fe;color:#075985;border:1px solid #bae6fd}
+.risk-recom-cell{min-width:200px;max-width:280px;font-size:10px;line-height:1.45}
+.risk-recom-cell b{color:#1e293b}
+.risk-tag{color:#dc2626;display:block;margin-bottom:3px}
+.recom-tag{color:#059669;display:block}
+
 

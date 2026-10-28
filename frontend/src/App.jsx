@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Cable, CheckCircle2, FileText, FolderKanban, RefreshCw, Search,
   ShieldCheck, X, LoaderCircle, ExternalLink, FileSpreadsheet, User,
-  UserCheck, Sparkles, Smile, ShieldAlert, UploadCloud, AlertTriangle
+  UserCheck, Sparkles, Smile, ShieldAlert, UploadCloud, AlertTriangle, Filter
 } from 'lucide-react';
 
 const DEFAULT_PROD_API = 'https://dudeai.onrender.com';
@@ -55,6 +55,11 @@ export default function App() {
   const [jsonValidationResult, setJsonValidationResult] = useState(null);
   const [importResults, setImportResults] = useState(null);
   const [isValidatingJson, setIsValidatingJson] = useState(false);
+  const [assistantPrompt, setAssistantPrompt] = useState('Hello! 👋 Welcome to Dude AI Security Assistant. What would you like to check today?');
+  const [userInstructions, setUserInstructions] = useState('Review the detected security findings below. You can select an individual vulnerability category or import all sample security issues into your connected Jira project.');
+  const [selectionPrompt, setSelectionPrompt] = useState('Select a vulnerability category to preview and import, or choose "All Categories" to import the full security test suite.');
+  const [categories, setCategories] = useState([]);
+  const [selectedCategory, setSelectedCategory] = useState('ALL');
 
   const clickCounts = useRef({});
   const busyRef = useRef('');
@@ -315,6 +320,16 @@ export default function App() {
       if (res.valid) {
         setPreviewIssues(res.issues || []);
         setDetectedProjectKeys(res.detected_project_keys || []);
+        if (res.welcome_message) setAssistantPrompt(res.welcome_message);
+        if (res.user_instructions) setUserInstructions(res.user_instructions);
+        if (res.selection_prompt) setSelectionPrompt(res.selection_prompt);
+        if (res.categories && res.categories.length) {
+          setCategories(res.categories);
+        } else {
+          const derived = Array.from(new Set((res.issues || []).map(i => i.category).filter(Boolean)));
+          setCategories(derived);
+        }
+        setSelectedCategory('ALL');
         if (projectKey) {
           setTargetProjectKey(projectKey);
         } else if (projects.length > 0) {
@@ -359,8 +374,16 @@ export default function App() {
     }
   }
 
+  const visiblePreviewIssues = useMemo(() => {
+    if (selectedCategory === 'ALL') return previewIssues;
+    return previewIssues.filter(i =>
+      (i.category || '').toLowerCase() === selectedCategory.toLowerCase() ||
+      (i.summary || '').toLowerCase().includes(selectedCategory.toLowerCase())
+    );
+  }, [previewIssues, selectedCategory]);
+
   async function handleImportVulnerabilities() {
-    if (!previewIssues.length) {
+    if (!visiblePreviewIssues.length) {
       setNotice({ type: 'error', text: 'No validated issues to import. Please upload or load a JSON file first.' });
       return;
     }
@@ -387,7 +410,7 @@ export default function App() {
         body: JSON.stringify({
           ...credentials(),
           target_project_key: finalProject,
-          issues: previewIssues.map(i => i.raw || i),
+          issues: visiblePreviewIssues.map(i => i.raw || i),
           skip_duplicates: true
         })
       });
@@ -514,6 +537,17 @@ export default function App() {
             </div>
 
             <div className="import-modal-body">
+              {/* Friendly Security Assistant Prompt Card */}
+              <div className="security-assistant-card">
+                <div className="assistant-avatar-badge">
+                  <Sparkles size={18} />
+                </div>
+                <div className="assistant-text-content">
+                  <h4 className="assistant-welcome-heading">{assistantPrompt}</h4>
+                  <p className="assistant-user-instructions">{userInstructions}</p>
+                </div>
+              </div>
+
               {/* Target Project Row */}
               <div className="import-config-row">
                 <label htmlFor="target-project-select">
@@ -590,7 +624,7 @@ export default function App() {
                 </div>
               )}
 
-              {/* Preview Table */}
+              {/* Category Selector & Preview Table */}
               {previewIssues.length > 0 && (
                 <div className="preview-section">
                   <div className="preview-heading">
@@ -601,25 +635,89 @@ export default function App() {
                     <span className="state-pill good">{previewIssues.length} Valid Records</span>
                   </div>
 
+                  {/* Vulnerability Category Selector */}
+                  <div className="category-selection-container">
+                    <div className="category-selection-header">
+                      <label htmlFor="vuln-category-select">
+                        <Filter size={15} />
+                        <span>{selectionPrompt || "Select Vulnerability Category:"}</span>
+                      </label>
+                      <span className="category-active-count">
+                        {selectedCategory === 'ALL'
+                          ? `All Categories (${previewIssues.length})`
+                          : `${selectedCategory} (${visiblePreviewIssues.length})`}
+                      </span>
+                    </div>
+                    <div className="category-selector-row">
+                      <select
+                        id="vuln-category-select"
+                        className="category-dropdown"
+                        value={selectedCategory}
+                        onChange={e => setSelectedCategory(e.target.value)}
+                      >
+                        <option value="ALL">All Categories ({previewIssues.length} issues)</option>
+                        {categories.map(cat => {
+                          const count = previewIssues.filter(i =>
+                            (i.category || '').toLowerCase() === cat.toLowerCase() ||
+                            (i.summary || '').toLowerCase().includes(cat.toLowerCase())
+                          ).length;
+                          return (
+                            <option key={cat} value={cat}>
+                              {cat} {count > 0 ? `(${count})` : ''}
+                            </option>
+                          );
+                        })}
+                      </select>
+                      <div className="category-quick-pills">
+                        <button
+                          type="button"
+                          className={`category-pill ${selectedCategory === 'ALL' ? 'active' : ''}`}
+                          onClick={() => setSelectedCategory('ALL')}
+                        >
+                          All ({previewIssues.length})
+                        </button>
+                        {categories.map(cat => (
+                          <button
+                            key={cat}
+                            type="button"
+                            className={`category-pill ${selectedCategory === cat ? 'active' : ''}`}
+                            onClick={() => setSelectedCategory(cat)}
+                          >
+                            {cat}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="preview-table-wrap">
                     <table className="preview-table">
                       <thead>
                         <tr>
                           <th>#</th>
+                          <th>Category</th>
                           <th>Type</th>
+                          <th>Severity</th>
                           <th>Priority</th>
                           <th>Summary</th>
                           <th>Labels</th>
-                          <th>Description Preview</th>
+                          <th>Risk & Recommendation</th>
+                          <th>Description</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {previewIssues.map((issue, idx) => (
+                        {visiblePreviewIssues.map((issue, idx) => (
                           <tr key={idx}>
-                            <td>{idx + 1}</td>
+                            <td>{issue.index || idx + 1}</td>
+                            <td><span className="category-badge">{issue.category || 'Security'}</span></td>
                             <td><span className="type-badge">{issue.issuetype}</span></td>
                             <td>
-                              <span className={`priority-badge ${issue.priority.toLowerCase()}`}>
+                              <span className={`severity-badge ${(issue.severity || 'medium').toLowerCase()}`}>
+                                {issue.severity || 'Medium'}
+                              </span>
+                            </td>
+                            <td>
+                              <span className={`priority-badge ${(issue.priority || 'high').toLowerCase()}`}>
                                 {issue.priority}
                               </span>
                             </td>
@@ -631,7 +729,11 @@ export default function App() {
                                 ))}
                               </div>
                             </td>
-                            <td className="desc-preview-cell">{issue.description_preview}</td>
+                            <td className="risk-recom-cell">
+                              {issue.risk && <span className="risk-tag"><b>Risk:</b> {issue.risk}</span>}
+                              {issue.recommendation && <span className="recom-tag"><b>Fix:</b> {issue.recommendation}</span>}
+                            </td>
+                            <td className="desc-preview-cell">{issue.description_preview || issue.description}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -649,12 +751,12 @@ export default function App() {
                       id="confirm-import-btn"
                       className="button primary confirm-import-btn"
                       onClick={handleImportVulnerabilities}
-                      disabled={busy === 'Import vulnerabilities'}
+                      disabled={busy === 'Import vulnerabilities' || visiblePreviewIssues.length === 0}
                     >
                       {busy === 'Import vulnerabilities' ? (
                         <><LoaderCircle className="spin" size={17}/> Importing into Jira...</>
                       ) : (
-                        <><Sparkles size={17}/> Confirm & Import {previewIssues.length} Issues to Jira</>
+                        <><Sparkles size={17}/> Confirm & Import {visiblePreviewIssues.length} {visiblePreviewIssues.length === 1 ? 'Issue' : 'Issues'} to Jira</>
                       )}
                     </button>
                   </div>

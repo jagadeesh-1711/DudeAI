@@ -72,19 +72,30 @@ Open http://127.0.0.1:5173.
 5. **Audit Attribution**:
    - Every API request, button click, and imported Jira issue records the user name and user ID in `api_audit_tracker.xlsx` (`API Call Log`, `Button Click Log`, and `Imported Jira Issues`).
 
-## Security Vulnerability JSON Importer
+## Security Vulnerability Master JSON Importer & Security Assistant
 
-Dude AI includes an automated vulnerability issue import workflow:
-1. **Sample Vulnerabilities File**: `security_vulnerabilities.json` located at the project root contains 6 Jira-style security findings (e.g. Password Exposure, User ID Disclosure, Revenue Data Exposure, Potential Malware, Missing API Authorization, Sensitive Data Leakage).
-2. **File Selection & Client Preview**:
-   - Users can select a local JSON file or click **Load Sample Vulnerabilities** to preview all 6 issues.
-   - The preview table details issue type (`Bug`), priority (`Highest`/`High`), summary, labels, and description snippets.
+Dude AI includes an automated vulnerability issue import workflow driven by a single master JSON file:
+1. **Master Vulnerabilities File**: `security_vulnerabilities.json` located at the project root acts as the single source of truth:
+   - **Assistant Prompt**: Friendly welcome greeting (`"Hello! 👋 Welcome to Dude AI Security Assistant. What would you like to check today?"`).
+   - **Instructions & Selection Prompt**: Guidance on reviewing findings and selecting specific categories or importing all templates.
+   - **6 Vulnerability Scenarios**:
+     1. Password Exposure
+     2. User ID Information Disclosure
+     3. Revenue Data Exposure
+     4. Potential Malware
+     5. Missing API Authorization
+     6. Sensitive Data Leakage
+   - **Enriched Issue Schema**: Summary, issue type, priority, severity, risk, recommendation, labels, and description.
+2. **Category Selection & Interactive Preview**:
+   - Users can select a local JSON file or click **Load Sample Vulnerabilities**.
+   - An interactive category dropdown and quick-filter pills allow users to select an individual vulnerability category or import all 6 categories at once.
+   - The preview table details category, severity, priority, summary, labels, risk analysis, recommended fix, and description.
 3. **Target Project Mapping**:
    - The user selects or inputs their active Jira project key (e.g. `DEMO`).
    - The importer maps template project keys (e.g. `DAST`) directly to the target project instead of assuming `DAST` exists.
 4. **Jira API V3 Integration & Resilient Creation**:
-   - Issues are created individually on Jira Cloud via `POST /rest/api/3/issue`.
-   - Issue descriptions are formatted in Atlassian Document Format (ADF).
+   - Issues are created on Jira Cloud via `POST /rest/api/3/issue`.
+   - Issue descriptions are formatted in Atlassian Document Format (ADF) containing severity, risk assessment, and remediation recommendations.
    - If a target project restricts issue types (e.g. non-software projects without `Bug`), the importer automatically falls back to `Task`.
 5. **Duplicate Prevention & Observability**:
    - Issues with existing summaries in the target project are skipped and clearly reported.

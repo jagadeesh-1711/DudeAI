@@ -744,12 +744,20 @@ def validate_import_json(body: ValidateJsonRequest):
 
         desc_raw = fields.get("description", "")
         desc_text = to_text(desc_raw)
+        category = str(item.get("category") or fields.get("category") or "").strip()
+        severity = str(fields.get("severity") or item.get("severity") or "Medium").strip()
+        risk = str(fields.get("risk") or item.get("risk") or "").strip()
+        recommendation = str(fields.get("recommendation") or item.get("recommendation") or "").strip()
 
         normalized.append({
             "index": idx + 1,
+            "category": category,
             "summary": summary,
             "issuetype": issue_type,
             "priority": priority,
+            "severity": severity,
+            "risk": risk,
+            "recommendation": recommendation,
             "original_project_key": orig_proj or "DAST",
             "labels": labels,
             "description": desc_text,
@@ -767,8 +775,23 @@ def validate_import_json(body: ValidateJsonRequest):
             "message": "Zero valid issues found in JSON."
         }
 
+    categories = []
+    if isinstance(data, dict) and "categories" in data and isinstance(data["categories"], list):
+        categories = data["categories"]
+    else:
+        seen_cats = []
+        for n in normalized:
+            c = n.get("category")
+            if c and c not in seen_cats:
+                seen_cats.append(c)
+        categories = seen_cats
+
     return {
         "valid": True,
+        "welcome_message": (isinstance(data, dict) and (data.get("welcome_message") or data.get("prompt"))) or "Hello! 👋 Welcome to Dude AI Security Assistant. What would you like to check today?",
+        "user_instructions": (isinstance(data, dict) and data.get("user_instructions")) or "Review the detected security findings below. You can select an individual vulnerability category or import all sample security issues into your connected Jira project.",
+        "selection_prompt": (isinstance(data, dict) and data.get("selection_prompt")) or "Select a vulnerability category to preview and import, or choose 'All Categories' to import the full security test suite.",
+        "categories": categories,
         "count": len(normalized),
         "issues": normalized,
         "detected_project_keys": sorted(list(detected_keys)),
@@ -815,12 +838,26 @@ async def import_vulnerabilities(body: ImportVulnerabilitiesRequest, request: Re
                         })
                         continue
 
-            # Map description to Jira ADF format
+            # Map description with severity, risk, recommendation to Jira ADF format
             desc_raw = fields_in.get("description", "")
+            severity = fields_in.get("severity") or item.get("severity")
+            risk = fields_in.get("risk") or item.get("risk")
+            recommendation = fields_in.get("recommendation") or item.get("recommendation")
+
             if isinstance(desc_raw, dict) and desc_raw.get("type") == "doc":
                 adf_desc = desc_raw
             else:
-                adf_desc = text_to_adf(to_text(desc_raw))
+                desc_text_clean = to_text(desc_raw).strip()
+                desc_sections = []
+                if desc_text_clean:
+                    desc_sections.append(desc_text_clean)
+                if severity:
+                    desc_sections.append(f"Severity: {severity}")
+                if risk:
+                    desc_sections.append(f"Risk: {risk}")
+                if recommendation:
+                    desc_sections.append(f"Recommendation: {recommendation}")
+                adf_desc = text_to_adf("\n\n".join(desc_sections))
 
             issue_type_name = "Bug"
             if isinstance(fields_in.get("issuetype"), dict):

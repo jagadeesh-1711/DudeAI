@@ -1,7 +1,19 @@
 {
-  "description": "Sample Jira-style security vulnerability issues for import into Dude AI.",
+  "welcome_message": "Hello! 👋 Welcome to Dude AI Security Assistant. What would you like to check today?",
+  "user_instructions": "Review the detected security findings below. You can select an individual vulnerability category or import all sample security issues into your connected Jira project.",
+  "selection_prompt": "Select a vulnerability category to preview and import, or choose 'All Categories' to import the full security test suite.",
+  "description": "Combined master security vulnerability template catalog and interactive security assistant prompt for Dude AI.",
+  "categories": [
+    "Password Exposure",
+    "User ID Information Disclosure",
+    "Revenue Data Exposure",
+    "Potential Malware",
+    "Missing API Authorization",
+    "Sensitive Data Leakage"
+  ],
   "issues": [
     {
+      "category": "Password Exposure",
       "fields": {
         "project": {
           "key": "DAST"
@@ -13,14 +25,20 @@
         "priority": {
           "name": "Highest"
         },
+        "severity": "Critical",
         "description": "Sample security finding: passwords may be exposed through API responses, application logs, or error messages. Verify in an authorized test environment.",
+        "risk": "High risk of credential exposure, unauthorized account access, and lateral system compromise.",
+        "recommendation": "Never log or transmit plaintext credentials; enforce strong hashing (Argon2id/bcrypt), HTTPS, and sanitize sensitive values from all API responses and logs.",
         "labels": [
           "security",
-          "password-exposure"
+          "password-exposure",
+          "dast",
+          "owasp-a02"
         ]
       }
     },
     {
+      "category": "User ID Information Disclosure",
       "fields": {
         "project": {
           "key": "DAST"
@@ -32,14 +50,20 @@
         "priority": {
           "name": "High"
         },
+        "severity": "High",
         "description": "Sample security finding: internal user identifiers may be exposed or user records may be accessible without proper authorization.",
+        "risk": "Internal account enumeration, identity harvesting, and targeted credential stuffing attacks.",
+        "recommendation": "Mask internal IDs, enforce robust authorization checks on user resource endpoints, and use opaque UUIDs instead of sequential IDs.",
         "labels": [
           "security",
-          "user-id-disclosure"
+          "user-id-disclosure",
+          "dast",
+          "owasp-a01"
         ]
       }
     },
     {
+      "category": "Revenue Data Exposure",
       "fields": {
         "project": {
           "key": "DAST"
@@ -51,14 +75,20 @@
         "priority": {
           "name": "High"
         },
+        "severity": "High",
         "description": "Sample security finding: confidential revenue figures or financial reports may be accessible without appropriate permissions.",
+        "risk": "Leakage of sensitive financial records leading to business intelligence compromise and regulatory compliance violations.",
+        "recommendation": "Enforce role-based access control (RBAC), tenant isolation, and strict server-side authorization on all financial and reporting endpoints.",
         "labels": [
           "security",
-          "financial-data"
+          "financial-data",
+          "revenue-exposure",
+          "owasp-a01"
         ]
       }
     },
     {
+      "category": "Potential Malware",
       "fields": {
         "project": {
           "key": "DAST"
@@ -70,14 +100,20 @@
         "priority": {
           "name": "Highest"
         },
+        "severity": "Critical",
         "description": "Sample security finding: a file upload may contain suspicious content that requires investigation using approved security tools in an isolated environment.",
+        "risk": "Remote code execution, host system compromise, ransomware deployment, and lateral network infection.",
+        "recommendation": "Implement automated antivirus/antimalware scanning, validate file types using magic bytes, restrict file extensions, and store uploads in isolated, non-executable storage buckets.",
         "labels": [
           "security",
-          "malware-detection"
+          "malware-detection",
+          "file-upload",
+          "owasp-a04"
         ]
       }
     },
     {
+      "category": "Missing API Authorization",
       "fields": {
         "project": {
           "key": "DAST"
@@ -89,14 +125,20 @@
         "priority": {
           "name": "High"
         },
+        "severity": "High",
         "description": "Sample security finding: a protected API endpoint may fail to verify whether a user is authorized to access a requested resource.",
+        "risk": "Broken object level authorization (BOLA/IDOR), allowing unprivileged users to read, modify, or delete arbitrary user data.",
+        "recommendation": "Validate user identity and permissions server-side on every API request; verify resource ownership before granting access.",
         "labels": [
           "security",
-          "api-authorization"
+          "api-authorization",
+          "bola",
+          "owasp-api1"
         ]
       }
     },
     {
+      "category": "Sensitive Data Leakage",
       "fields": {
         "project": {
           "key": "DAST"
@@ -108,10 +150,15 @@
         "priority": {
           "name": "High"
         },
+        "severity": "Medium",
         "description": "Sample security finding: an API response may expose confidential personal or business information that is not required by the client.",
+        "risk": "Privacy violations under GDPR/CCPA, sensitive metadata harvesting, and downstream exploitation.",
+        "recommendation": "Use explicit API data transfer objects (DTOs) / Pydantic schemas to filter out sensitive internal fields before serializing responses.",
         "labels": [
           "security",
-          "sensitive-data"
+          "sensitive-data",
+          "data-leakage",
+          "owasp-a02"
         ]
       }
     }

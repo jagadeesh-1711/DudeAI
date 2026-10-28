@@ -184,14 +184,25 @@ test('vulnerability import modal previews security_vulnerabilities.json and impo
       body: JSON.stringify({
         valid: true,
         count: 6,
+        welcome_message: 'Hello! 👋 Welcome to Dude AI Security Assistant. What would you like to check today?',
+        user_instructions: 'Review the detected security findings below. You can select an individual vulnerability category or import all sample security issues into your connected Jira project.',
+        selection_prompt: 'Select a vulnerability category to preview and import, or choose "All Categories" to import the full security test suite.',
+        categories: [
+          'Password Exposure',
+          'User ID Information Disclosure',
+          'Revenue Data Exposure',
+          'Potential Malware',
+          'Missing API Authorization',
+          'Sensitive Data Leakage'
+        ],
         detected_project_keys: ['DAST'],
         issues: [
-          { index: 1, summary: 'Password Exposure Vulnerability', issuetype: 'Bug', priority: 'Highest', original_project_key: 'DAST', labels: ['security'], description_preview: 'Sample security finding...' },
-          { index: 2, summary: 'User ID Information Disclosure', issuetype: 'Bug', priority: 'High', original_project_key: 'DAST', labels: ['security'], description_preview: 'Sample security finding...' },
-          { index: 3, summary: 'Revenue Data Exposure', issuetype: 'Bug', priority: 'High', original_project_key: 'DAST', labels: ['security'], description_preview: 'Sample security finding...' },
-          { index: 4, summary: 'Potential Malware in Uploaded File', issuetype: 'Bug', priority: 'Highest', original_project_key: 'DAST', labels: ['security'], description_preview: 'Sample security finding...' },
-          { index: 5, summary: 'Missing API Authorization', issuetype: 'Bug', priority: 'High', original_project_key: 'DAST', labels: ['security'], description_preview: 'Sample security finding...' },
-          { index: 6, summary: 'Sensitive Data Leakage in API Response', issuetype: 'Bug', priority: 'High', original_project_key: 'DAST', labels: ['security'], description_preview: 'Sample security finding...' },
+          { index: 1, category: 'Password Exposure', summary: 'Password Exposure Vulnerability', issuetype: 'Bug', priority: 'Highest', severity: 'Critical', original_project_key: 'DAST', labels: ['security'], description_preview: 'Sample security finding...' },
+          { index: 2, category: 'User ID Information Disclosure', summary: 'User ID Information Disclosure', issuetype: 'Bug', priority: 'High', severity: 'High', original_project_key: 'DAST', labels: ['security'], description_preview: 'Sample security finding...' },
+          { index: 3, category: 'Revenue Data Exposure', summary: 'Revenue Data Exposure', issuetype: 'Bug', priority: 'High', severity: 'High', original_project_key: 'DAST', labels: ['security'], description_preview: 'Sample security finding...' },
+          { index: 4, category: 'Potential Malware', summary: 'Potential Malware in Uploaded File', issuetype: 'Bug', priority: 'Highest', severity: 'Critical', original_project_key: 'DAST', labels: ['security'], description_preview: 'Sample security finding...' },
+          { index: 5, category: 'Missing API Authorization', summary: 'Missing API Authorization', issuetype: 'Bug', priority: 'High', severity: 'High', original_project_key: 'DAST', labels: ['security'], description_preview: 'Sample security finding...' },
+          { index: 6, category: 'Sensitive Data Leakage', summary: 'Sensitive Data Leakage in API Response', issuetype: 'Bug', priority: 'High', severity: 'Medium', original_project_key: 'DAST', labels: ['security'], description_preview: 'Sample security finding...' },
         ],
         message: 'Successfully validated 6 vulnerability issue(s).'
       })
@@ -237,6 +248,9 @@ test('vulnerability import modal previews security_vulnerabilities.json and impo
 
   await expect(page.getByText('Import Security Vulnerabilities to Jira')).toBeVisible();
 
+  // Verify friendly assistant prompt is displayed
+  await expect(page.getByText('Hello! 👋 Welcome to Dude AI Security Assistant')).toBeVisible();
+
   // 3. Click "Load Sample Vulnerabilities"
   const loadSampleBtn = page.getByRole('button', { name: /Load Sample Vulnerabilities/i });
   await loadSampleBtn.click();
@@ -244,8 +258,9 @@ test('vulnerability import modal previews security_vulnerabilities.json and impo
   // Configure target project key
   await page.locator('#target-project-select').fill('DEMO');
 
-  // 4. Verify preview table shows the 6 vulnerability items
+  // 4. Verify preview table shows the 6 vulnerability items and category selector
   await expect(page.getByText('Previewing 6 Vulnerability Issue(s)')).toBeVisible();
+  await expect(page.locator('#vuln-category-select')).toBeVisible();
   await expect(page.getByText('Password Exposure Vulnerability')).toBeVisible();
   await expect(page.getByText('Potential Malware in Uploaded File')).toBeVisible();
   await expect(page.getByText('Sensitive Data Leakage in API Response')).toBeVisible();

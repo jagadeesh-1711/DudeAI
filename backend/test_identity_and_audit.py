@@ -151,10 +151,16 @@ class TestDudeAIBackend(unittest.TestCase):
         self.assertTrue(data["valid"])
         self.assertEqual(data["count"], 6)
         self.assertIn("DAST", data["detected_project_keys"])
+        self.assertIn("Hello! 👋 Welcome to Dude AI Security Assistant", data["welcome_message"])
+        self.assertEqual(len(data["categories"]), 6)
         first_issue = data["issues"][0]
         self.assertEqual(first_issue["summary"], "Password Exposure Vulnerability")
+        self.assertEqual(first_issue["category"], "Password Exposure")
         self.assertEqual(first_issue["issuetype"], "Bug")
         self.assertEqual(first_issue["priority"], "Highest")
+        self.assertEqual(first_issue["severity"], "Critical")
+        self.assertTrue(len(first_issue["risk"]) > 0)
+        self.assertTrue(len(first_issue["recommendation"]) > 0)
 
     def test_validate_import_json_invalid_syntax(self):
         response = self.client.post("/api/jira/validate-import-json", json={"raw_json": "{not-valid-json"})
