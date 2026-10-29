@@ -6,8 +6,7 @@
     "frontend"
   ],
   "scripts": {
-    "prebuild": "npm --prefix frontend install",
-    "dev": "npm --prefix frontend run dev",
+      "dev": "npm --prefix frontend run dev",
     "build": "npm --prefix frontend run build",
     "preview": "npm --prefix frontend run preview",
     "test:e2e": "npm --prefix frontend run test:e2e"
